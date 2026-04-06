@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: intellisense
+      POSTGRES_PASSWORD: intellisense_dev
+      POSTGRES_DB: intellisense
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U intellisense"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    ports:
+      - "3001:3001"
+    environment:
+      DATABASE_URL: postgresql://intellisense:intellisense_dev@db:5432/intellisense
+      SESSION_SECRET: intelli-sense-dev-secret-change-in-prod
+      NODE_ENV: development
+      PORT: 3001
+      ML_SERVICE_URL: http://ml-service:8000
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./server:/app/server
+      - ./shared:/app/shared
+      - /app/node_modules
+
+  client:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    ports:
+      - "3000:3000"
+    environment:
+      VITE_API_URL: http://localhost:3001
+    volumes:
+      - ./client:/app/client
+      - ./shared:/app/shared
+      - /app/node_modules
+
+  ml-service:
+    build:
+      context: ./ml-service
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://intellisense:intellisense_dev@db:5432/intellisense
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

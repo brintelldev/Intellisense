@@ -1,0 +1,31 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer utilities {
+  .brand-gradient {
+    background: linear-gradient(135deg, #293b83 0%, #67b4b0 100%);
+  }
+
+  .brand-gradient-text {
+    background: linear-gradient(135deg, #293b83 0%, #67b4b0 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .glass-card {
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(20px);
+  }
+
+  .obtain-gradient {
+    background: linear-gradient(135deg, #10B981 0%, #34D399 100%);
+  }
+}

@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+*.log
+drizzle/
+.vite/
+__pycache__/
+*.pyc
+pgdata/
+stitch_export/
+stitch_intellisense.zip
