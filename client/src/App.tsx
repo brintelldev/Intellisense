@@ -1,83 +1,87 @@
-import { Route, Switch } from "wouter";
+import { Route, Switch, Redirect } from "wouter";
 
-// Shell pages
+// Shell
+import { AuthProvider, useAuthContext } from "./shell/contexts/AuthContext";
+import AppShell from "./shell/components/AppShell";
 import LoginPage from "./shell/pages/LoginPage";
+import LifecyclePage from "./shell/pages/LifecyclePage";
+import SettingsPage from "./shell/pages/SettingsPage";
 
-// Placeholder for routes not yet implemented
-function Placeholder({ title }: { title: string }) {
+// Retain Sense
+import RetainDashboardPage from "./modules/retain/pages/RetainDashboardPage";
+import RetainPredictionsPage from "./modules/retain/pages/RetainPredictionsPage";
+import RetainRootCausesPage from "./modules/retain/pages/RetainRootCausesPage";
+import RetainROIPage from "./modules/retain/pages/RetainROIPage";
+import RetainCustomersPage from "./modules/retain/pages/RetainCustomersPage";
+import RetainUploadPage from "./modules/retain/pages/RetainUploadPage";
+
+// Obtain Sense
+import ObtainDashboardPage from "./modules/obtain/pages/ObtainDashboardPage";
+import ObtainLeadsPage from "./modules/obtain/pages/ObtainLeadsPage";
+import ObtainICPPage from "./modules/obtain/pages/ObtainICPPage";
+import ObtainFunnelPage from "./modules/obtain/pages/ObtainFunnelPage";
+import ObtainCACLTVPage from "./modules/obtain/pages/ObtainCACLTVPage";
+import ObtainROIPage from "./modules/obtain/pages/ObtainROIPage";
+import ObtainUploadPage from "./modules/obtain/pages/ObtainUploadPage";
+
+function NotFound() {
   return (
-    <div className="flex items-center justify-center h-full">
+    <div className="flex items-center justify-center h-full min-h-[400px]">
       <div className="text-center">
-        <h1 className="text-2xl font-bold text-slate-800">{title}</h1>
-        <p className="text-slate-500 mt-2">Em construção</p>
+        <p className="text-4xl font-bold text-slate-200 mb-2">404</p>
+        <h1 className="text-lg font-semibold text-slate-700">Página não encontrada</h1>
+        <a href="/" className="text-sm text-[#293b83] mt-2 inline-block hover:underline">Voltar ao início</a>
       </div>
     </div>
   );
 }
 
+function RequireAuth({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, isLoading } = useAuthContext();
+  if (isLoading) return null;
+  if (!isAuthenticated) return <Redirect to="/login" />;
+  return <>{children}</>;
+}
+
+function AuthenticatedRoutes() {
+  return (
+    <AppShell>
+      <Switch>
+        <Route path="/" component={LifecyclePage} />
+
+        {/* Retain Sense */}
+        <Route path="/retain" component={RetainDashboardPage} />
+        <Route path="/retain/predictions" component={RetainPredictionsPage} />
+        <Route path="/retain/root-causes" component={RetainRootCausesPage} />
+        <Route path="/retain/roi" component={RetainROIPage} />
+        <Route path="/retain/customers" component={RetainCustomersPage} />
+        <Route path="/retain/upload" component={RetainUploadPage} />
+
+        {/* Obtain Sense */}
+        <Route path="/obtain" component={ObtainDashboardPage} />
+        <Route path="/obtain/leads" component={ObtainLeadsPage} />
+        <Route path="/obtain/icp" component={ObtainICPPage} />
+        <Route path="/obtain/funnel" component={ObtainFunnelPage} />
+        <Route path="/obtain/cac-ltv" component={ObtainCACLTVPage} />
+        <Route path="/obtain/roi" component={ObtainROIPage} />
+        <Route path="/obtain/upload" component={ObtainUploadPage} />
+
+        {/* Settings */}
+        <Route path="/settings" component={SettingsPage} />
+
+        <Route component={NotFound} />
+      </Switch>
+    </AppShell>
+  );
+}
+
 export default function App() {
   return (
-    <Switch>
-      {/* Public */}
-      <Route path="/login" component={LoginPage} />
-
-      {/* Shell */}
-      <Route path="/">
-        <Placeholder title="Ciclo de Vida do Cliente" />
-      </Route>
-
-      {/* Retain Sense */}
-      <Route path="/retain">
-        <Placeholder title="Dashboard Executivo — Retain Sense" />
-      </Route>
-      <Route path="/retain/predictions">
-        <Placeholder title="Predições de Churn" />
-      </Route>
-      <Route path="/retain/root-causes">
-        <Placeholder title="Causas Raiz" />
-      </Route>
-      <Route path="/retain/roi">
-        <Placeholder title="Simulador ROI — Retenção" />
-      </Route>
-      <Route path="/retain/customers">
-        <Placeholder title="Clientes" />
-      </Route>
-      <Route path="/retain/upload">
-        <Placeholder title="Upload de Dados — Retain" />
-      </Route>
-
-      {/* Obtain Sense */}
-      <Route path="/obtain">
-        <Placeholder title="Dashboard Executivo — Obtain Sense" />
-      </Route>
-      <Route path="/obtain/leads">
-        <Placeholder title="Lead Scoring Preditivo" />
-      </Route>
-      <Route path="/obtain/icp">
-        <Placeholder title="ICP & Lookalike" />
-      </Route>
-      <Route path="/obtain/funnel">
-        <Placeholder title="Funil & Gargalos" />
-      </Route>
-      <Route path="/obtain/cac-ltv">
-        <Placeholder title="CAC vs LTV" />
-      </Route>
-      <Route path="/obtain/roi">
-        <Placeholder title="Simulador ROI — Aquisição" />
-      </Route>
-      <Route path="/obtain/upload">
-        <Placeholder title="Upload de Dados — Obtain" />
-      </Route>
-
-      {/* Settings */}
-      <Route path="/settings">
-        <Placeholder title="Configurações" />
-      </Route>
-
-      {/* 404 */}
-      <Route>
-        <Placeholder title="Página não encontrada" />
-      </Route>
-    </Switch>
+    <AuthProvider>
+      <Switch>
+        <Route path="/login" component={LoginPage} />
+        <Route component={() => <RequireAuth><AuthenticatedRoutes /></RequireAuth>} />
+      </Switch>
+    </AuthProvider>
   );
 }

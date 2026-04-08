@@ -11,6 +11,7 @@ import {
   jsonb,
   pgEnum,
   serial,
+  index,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
@@ -22,7 +23,10 @@ export const userRoleEnum = pgEnum("user_role", ["admin", "operator", "viewer"])
 export const riskLevelEnum = pgEnum("risk_level", ["low", "medium", "high", "critical"]);
 export const customerStatusEnum = pgEnum("customer_status", ["active", "at_risk", "churned"]);
 export const uploadStatusEnum = pgEnum("upload_status", ["pending", "processing", "completed", "failed"]);
-export const leadSourceEnum = pgEnum("lead_source", ["manual", "csv", "hubspot", "salesforce", "rdstation"]);
+export const leadSourceEnum = pgEnum("lead_source", [
+  "manual", "csv", "hubspot", "salesforce", "rdstation",
+  "organic", "paid_search", "paid_social", "email", "referral", "event", "outbound", "other",
+]);
 export const leadStatusEnum = pgEnum("lead_status", ["new", "qualifying", "contacted", "proposal", "won", "lost"]);
 export const companySizeEnum = pgEnum("company_size", ["micro", "small", "medium", "large", "enterprise"]);
 export const scoreTierEnum = pgEnum("score_tier", ["hot", "warm", "cold", "disqualified"]);
@@ -117,7 +121,11 @@ export const customers = pgTable("customers", {
   churnDate: date("churn_date"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (t) => ({
+  tenantIdx: index("customers_tenant_idx").on(t.tenantId),
+  tenantRiskIdx: index("customers_tenant_risk_idx").on(t.tenantId, t.riskLevel),
+  tenantSegmentIdx: index("customers_tenant_segment_idx").on(t.tenantId, t.segment),
+}));
 
 export const retainPredictions = pgTable("retain_predictions", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -130,7 +138,10 @@ export const retainPredictions = pgTable("retain_predictions", {
   recommendedAction: text("recommended_action"),
   modelId: uuid("model_id"),
   predictedAt: timestamp("predicted_at").defaultNow().notNull(),
-});
+}, (t) => ({
+  tenantIdx: index("retain_predictions_tenant_idx").on(t.tenantId),
+  customerIdx: index("retain_predictions_customer_idx").on(t.customerId),
+}));
 
 export const retainChurnCauses = pgTable("retain_churn_causes", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -170,7 +181,9 @@ export const retainAnalytics = pgTable("retain_analytics", {
   mrr: real("mrr"),
   revenueAtRisk: real("revenue_at_risk"),
   avgHealthScore: real("avg_health_score"),
-});
+}, (t) => ({
+  tenantDateIdx: index("retain_analytics_tenant_date_idx").on(t.tenantId, t.snapshotDate),
+}));
 
 export const retainMlModels = pgTable("retain_ml_models", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -217,7 +230,10 @@ export const leads = pgTable("leads", {
   assignedTo: uuid("assigned_to").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (t) => ({
+  tenantIdx: index("leads_tenant_idx").on(t.tenantId),
+  tenantStatusIdx: index("leads_tenant_status_idx").on(t.tenantId, t.status),
+}));
 
 export const obtainScores = pgTable("obtain_scores", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -232,7 +248,11 @@ export const obtainScores = pgTable("obtain_scores", {
   recommendedOffer: text("recommended_offer"),
   modelVersion: varchar("model_version", { length: 50 }),
   scoredAt: timestamp("scored_at").defaultNow().notNull(),
-});
+}, (t) => ({
+  tenantIdx: index("obtain_scores_tenant_idx").on(t.tenantId),
+  leadIdx: index("obtain_scores_lead_idx").on(t.leadId),
+  tenantTierIdx: index("obtain_scores_tenant_tier_idx").on(t.tenantId, t.riskTier),
+}));
 
 export const obtainIcpClusters = pgTable("obtain_icp_clusters", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -340,7 +360,7 @@ export interface SectorConfig {
 
 export interface ShapValue {
   feature: string;
-  value: number | string;
+  value?: number | string;
   impact: number;
   direction: "positive" | "negative";
   label: string;

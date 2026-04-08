@@ -19,6 +19,6 @@
     },
     "jsx": "react-jsx"
   },
-  "include": ["client/src/**/*", "server/src/**/*", "shared/**/*"],
+  "include": ["client/src/**/*", "server/src/**/*", "server/tests/**/*", "shared/**/*"],
   "exclude": ["node_modules", "dist"]
 }

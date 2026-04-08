@@ -1,0 +1,1204 @@
+[
+  {
+    "id": "TC001",
+    "title": "Log in and reach the lifecycle overview workspace",
+    "description": "Verifies a user can log in with valid credentials and lands on the lifecycle overview page with core summary content visible.",
+    "category": "User Login",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_USER}} into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_PASSWORD}} into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the user lands on the lifecycle overview page"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify Obtain and Retain summary information is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC002",
+    "title": "Show an error for invalid login credentials",
+    "description": "Verifies submitting incorrect credentials shows an invalid-credentials error and the user remains unauthenticated.",
+    "category": "User Login",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill invalid.user@example.com into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Fill wrong-password into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify an invalid credentials error is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the user remains on the login page"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC003",
+    "title": "Filter, inspect SHAP explanation, record retention action, and export churn predictions",
+    "description": "Verifies an analyst can filter to critical-risk customers, view the SHAP waterfall in the customer detail drawer, record/schedule a retention action, and export the filtered predictions to CSV.",
+    "category": "Churn Predictions (customer list and detail)",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_USER}} into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_PASSWORD}} into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation item to open Retain predictions"
+      },
+      {
+        "type": "action",
+        "description": "Select the Critico risk filter"
+      },
+      {
+        "type": "action",
+        "description": "Select a customer row from the filtered results"
+      },
+      {
+        "type": "action",
+        "description": "Verify a customer detail drawer is displayed"
+      },
+      {
+        "type": "action",
+        "description": "Verify a SHAP waterfall explanation is displayed"
+      },
+      {
+        "type": "action",
+        "description": "Record or schedule a retention action for the customer"
+      },
+      {
+        "type": "action",
+        "description": "Export the current predictions view to CSV"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a retention action is shown as saved for the customer"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC004",
+    "title": "Open hot lead detail, review SHAP explanation, and register a sales action",
+    "description": "Verifies a user can filter to hot leads, open a lead detail drawer with SHAP waterfall and recommendations, and register a next-best-offer or sales action.",
+    "category": "Lead Scoring and Lead Detail",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_USER}} into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_PASSWORD}} into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation link to the Obtain leads page"
+      },
+      {
+        "type": "action",
+        "description": "Select the filter for Hot leads"
+      },
+      {
+        "type": "action",
+        "description": "Open the detail drawer for the first lead in the results"
+      },
+      {
+        "type": "action",
+        "description": "Register a next-best-offer or sales action for the lead"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the lead detail shows a SHAP waterfall explanation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the new sales action is shown in the lead activity history"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC005",
+    "title": "Access Obtain details from the lifecycle overview",
+    "description": "Verifies a logged-in user can review lifecycle overview insights and navigate into the Obtain dashboard for acquisition details.",
+    "category": "Lifecycle Overview (Intelli Sense Home)",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_USER}} into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_PASSWORD}} into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Scroll to the lifecycle ecosystem insight section"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation to acquisition details"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the user lands on the Obtain dashboard page"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify acquisition KPI or summary content is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC006",
+    "title": "Access Retain details from the lifecycle overview",
+    "description": "Verifies a logged-in user can use the lifecycle overview to navigate into the Retain dashboard for retention details.",
+    "category": "Lifecycle Overview (Intelli Sense Home)",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_USER}} into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_PASSWORD}} into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation to retention details"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the user lands on the Retain dashboard page"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify retention KPI or summary content is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC007",
+    "title": "Export filtered scored leads",
+    "description": "Verifies a user can filter/search scored leads and export the filtered list as a CSV.",
+    "category": "Lead Scoring and Lead Detail",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_USER}} into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_PASSWORD}} into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation link to the Obtain leads page"
+      },
+      {
+        "type": "action",
+        "description": "Fill a search term into the leads search field"
+      },
+      {
+        "type": "action",
+        "description": "Select a tier filter option"
+      },
+      {
+        "type": "action",
+        "description": "Export the leads as CSV"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a CSV export is initiated for the filtered leads"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC008",
+    "title": "Navigate from Retain dashboard to predictions list",
+    "description": "Verifies a logged-in user can view the Retain executive dashboard and navigate to the predictions list for customer-level analysis.",
+    "category": "Retain Executive Dashboard",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_USER}} into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_PASSWORD}} into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation to the Retain dashboard"
+      },
+      {
+        "type": "action",
+        "description": "Scroll through the dashboard content"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation to the churn predictions list"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the user lands on the Retain predictions page"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a list of customer predictions is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC009",
+    "title": "Search and filter predictions list and export current view",
+    "description": "Verifies a user can search and apply filters on the churn predictions list, see the results ordered by churn probability, and export the current filtered view to CSV.",
+    "category": "Churn Predictions (customer list and detail)",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_USER}} into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_PASSWORD}} into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation item to open Retain predictions"
+      },
+      {
+        "type": "action",
+        "description": "Fill a valid customer search term into the search field"
+      },
+      {
+        "type": "action",
+        "description": "Select a segment filter option"
+      },
+      {
+        "type": "action",
+        "description": "Select a status filter option"
+      },
+      {
+        "type": "action",
+        "description": "Export the current predictions view to CSV"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the customer list updates to reflect the applied search and filters"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC010",
+    "title": "Review a high-risk customer with explanation and recommended action",
+    "description": "Verifies a user can filter predictions by risk level, open a customer detail, and view SHAP explanation and recommended retention action.",
+    "category": "Retain Executive Dashboard",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_USER}} into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_PASSWORD}} into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation to the Retain dashboard"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation to the churn predictions list"
+      },
+      {
+        "type": "action",
+        "description": "Select a high-risk option in the risk level filter"
+      },
+      {
+        "type": "action",
+        "description": "Open a customer detail from the predictions list"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a SHAP waterfall explanation is displayed in the customer detail view"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a recommended retention action is displayed in the customer detail view"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC011",
+    "title": "Upload leads CSV, map required fields, and see scored leads in table",
+    "description": "Verifies a user can upload a leads CSV, map columns to Obtain dimensions including required fields, process scoring, and then see the imported leads in the scored leads table.",
+    "category": "Obtain Leads Upload and Mapping",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_USER}} into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_PASSWORD}} into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation link to the Obtain upload page"
+      },
+      {
+        "type": "action",
+        "description": "Select a CSV file of leads for upload"
+      },
+      {
+        "type": "action",
+        "description": "Submit the upload"
+      },
+      {
+        "type": "action",
+        "description": "Map CSV columns to the required Obtain dimensions including the email field"
+      },
+      {
+        "type": "action",
+        "description": "Confirm the mapping and start processing"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a processing complete confirmation is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation link to the Obtain leads page"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the leads table displays imported leads with scores"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC012",
+    "title": "Upload retain CSV, map columns, process, and see predictions available",
+    "description": "Verifies a retention manager can upload a customer CSV, map columns to required Retain dimensions, process successfully, and then see predictions available on the predictions page.",
+    "category": "Retain Data Upload and Column Mapping",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_USER}} into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_PASSWORD}} into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation item to open Retain upload"
+      },
+      {
+        "type": "action",
+        "description": "Select a valid retain CSV file"
+      },
+      {
+        "type": "action",
+        "description": "Submit the upload"
+      },
+      {
+        "type": "action",
+        "description": "Map CSV columns to the required Retain dimensions in the mapper"
+      },
+      {
+        "type": "action",
+        "description": "Confirm and start processing"
+      },
+      {
+        "type": "action",
+        "description": "Verify a processing complete confirmation is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation item to open Retain predictions"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify churn prediction rows are displayed"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC013",
+    "title": "View obtain executive dashboard KPIs and navigate to leads",
+    "description": "Verifies a growth manager can view CAC/LTV/funnel and CAC×LTV insights on the obtain dashboard and navigate to the scored leads page to take action.",
+    "category": "Obtain Executive Dashboard",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_USER}} into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_PASSWORD}} into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation item to open Obtain dashboard"
+      },
+      {
+        "type": "action",
+        "description": "Verify CAC, LTV, and funnel metrics are displayed"
+      },
+      {
+        "type": "action",
+        "description": "Verify a CAC×LTV quadrant matrix is displayed"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation item to open Obtain leads"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify scored lead rows are displayed"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC014",
+    "title": "Default sorting shows highest-scored leads first",
+    "description": "Verifies the leads table initially orders results by score descending so the best leads are prioritized.",
+    "category": "Lead Scoring and Lead Detail",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_USER}} into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_PASSWORD}} into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation link to the Obtain leads page"
+      },
+      {
+        "type": "action",
+        "description": "Wait for the leads table to finish loading"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the leads are displayed ordered by score with the highest scores at the top"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC015",
+    "title": "Close and reopen customer detail without losing list context",
+    "description": "Verifies a user can open a customer detail drawer from the filtered predictions list, close it, and continue working with the same filtered list context.",
+    "category": "Churn Predictions (customer list and detail)",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_USER}} into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_PASSWORD}} into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation item to open Retain predictions"
+      },
+      {
+        "type": "action",
+        "description": "Select the Critico risk filter"
+      },
+      {
+        "type": "action",
+        "description": "Select a customer row from the filtered results"
+      },
+      {
+        "type": "action",
+        "description": "Verify a customer detail drawer is displayed"
+      },
+      {
+        "type": "action",
+        "description": "Close the customer detail drawer"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the predictions list remains filtered to Critico risk customers"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC016",
+    "title": "Save sector configuration and see preview reflect changes",
+    "description": "Verifies a tenant admin can edit sector labels, segments, and currency, save the configuration, and see the preview update accordingly.",
+    "category": "Tenant Sector Configuration (Settings)",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_USER}} into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_PASSWORD}} into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation link to the Settings page"
+      },
+      {
+        "type": "action",
+        "description": "Open the Setor tab"
+      },
+      {
+        "type": "action",
+        "description": "Fill a new value into the customer label field"
+      },
+      {
+        "type": "action",
+        "description": "Select a different currency option"
+      },
+      {
+        "type": "action",
+        "description": "Add or edit a segment value"
+      },
+      {
+        "type": "action",
+        "description": "Save the sector configuration"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the settings preview reflects the updated labels, segments, and currency"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC017",
+    "title": "Clear filters returns to the full scored leads list",
+    "description": "Verifies a user can apply filters and then clear them to return to the unfiltered scored leads list.",
+    "category": "Lead Scoring and Lead Detail",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_USER}} into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_PASSWORD}} into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation link to the Obtain leads page"
+      },
+      {
+        "type": "action",
+        "description": "Select a campaign filter option"
+      },
+      {
+        "type": "action",
+        "description": "Clear all active filters"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the leads list shows results without any active filters"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC018",
+    "title": "Fix missing email by mapping a different column and complete processing",
+    "description": "Verifies a user can resolve a missing-email validation by mapping an available CSV column to the required email dimension and complete processing successfully.",
+    "category": "Obtain Leads Upload and Mapping",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_USER}} into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_PASSWORD}} into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation link to the Obtain upload page"
+      },
+      {
+        "type": "action",
+        "description": "Select a CSV file that requires manual mapping for the email dimension"
+      },
+      {
+        "type": "action",
+        "description": "Submit the upload"
+      },
+      {
+        "type": "action",
+        "description": "Map an available CSV column to the required email dimension"
+      },
+      {
+        "type": "action",
+        "description": "Confirm the mapping and start processing"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a processing complete confirmation is visible"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC019",
+    "title": "Remap retain columns after validation and process successfully",
+    "description": "Verifies a user can resolve mapping/required-dimension issues in the retain column mapper and complete processing successfully.",
+    "category": "Retain Data Upload and Column Mapping",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_USER}} into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_PASSWORD}} into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation item to open Retain upload"
+      },
+      {
+        "type": "action",
+        "description": "Select a retain CSV file that triggers missing-dimension validation"
+      },
+      {
+        "type": "action",
+        "description": "Submit the upload"
+      },
+      {
+        "type": "action",
+        "description": "Verify a validation error indicating missing required dimensions is displayed"
+      },
+      {
+        "type": "action",
+        "description": "Update the column mapping to satisfy required Retain dimensions"
+      },
+      {
+        "type": "action",
+        "description": "Confirm and start processing"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a processing complete confirmation is visible"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC020",
+    "title": "Use obtain dashboard visual insights to inspect channels and campaigns",
+    "description": "Verifies a user can view channel efficiency and campaign performance visuals on the obtain dashboard to identify campaigns to scale or pause.",
+    "category": "Obtain Executive Dashboard",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_USER}} into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_PASSWORD}} into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation item to open Obtain dashboard"
+      },
+      {
+        "type": "action",
+        "description": "Verify a channel efficiency visualization is displayed"
+      },
+      {
+        "type": "action",
+        "description": "Scroll to the campaigns visualization section"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify campaign performance points are displayed"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC021",
+    "title": "Missing required email on upload shows validation and allows cancel",
+    "description": "Verifies uploading a leads CSV missing the required email column shows a validation error and allows the user to cancel out of the mapping flow.",
+    "category": "Obtain Leads Upload and Mapping",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_USER}} into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_PASSWORD}} into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation link to the Obtain upload page"
+      },
+      {
+        "type": "action",
+        "description": "Select a CSV file that is missing the lead email column"
+      },
+      {
+        "type": "action",
+        "description": "Submit the upload"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a validation error is visible indicating the email field is required"
+      },
+      {
+        "type": "action",
+        "description": "Cancel the upload or mapping flow"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the user returns to the Obtain upload start state"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC022",
+    "title": "Sector labels persist across dashboards after saving settings",
+    "description": "Verifies that after saving sector configuration, navigating to Lifecycle, Retain, and Obtain pages shows updated labels in the UI.",
+    "category": "Tenant Sector Configuration (Settings)",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_USER}} into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_PASSWORD}} into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation link to the Settings page"
+      },
+      {
+        "type": "action",
+        "description": "Open the Setor tab"
+      },
+      {
+        "type": "action",
+        "description": "Fill a new value into the customer label field"
+      },
+      {
+        "type": "action",
+        "description": "Save the sector configuration"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation link to the Lifecycle overview page"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation link to the Retain dashboard page"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation link to the Obtain dashboard page"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the updated sector labels are reflected in the dashboards UI"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC023",
+    "title": "Handle no-results state for predictions filters and allow clearing filters",
+    "description": "Verifies the predictions page shows an empty state when filters yield no results and allows the user to clear filters to return to the full list.",
+    "category": "Churn Predictions (customer list and detail)",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_USER}} into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_PASSWORD}} into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation item to open Retain predictions"
+      },
+      {
+        "type": "action",
+        "description": "Select a combination of filters that results in no matching customers"
+      },
+      {
+        "type": "action",
+        "description": "Verify an empty state is displayed for the predictions list"
+      },
+      {
+        "type": "action",
+        "description": "Clear all applied filters"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify customer rows are displayed again in the predictions list"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC024",
+    "title": "Show validation when retain CSV is missing required dimensions and allow cancel",
+    "description": "Verifies the retain upload flow blocks processing when required dimensions are missing, shows a validation error, and allows the user to cancel out of the upload/mapping flow.",
+    "category": "Retain Data Upload and Column Mapping",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_USER}} into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_PASSWORD}} into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation item to open Retain upload"
+      },
+      {
+        "type": "action",
+        "description": "Select a retain CSV file that is missing required columns"
+      },
+      {
+        "type": "action",
+        "description": "Submit the upload"
+      },
+      {
+        "type": "action",
+        "description": "Verify a validation error indicating missing required dimensions is displayed"
+      },
+      {
+        "type": "action",
+        "description": "Cancel the upload or mapping flow"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the user returns to the retain upload start state"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC025",
+    "title": "Export includes special characters in filtered view",
+    "description": "Verifies exporting a filtered leads list works when the search term includes special characters and the export is still initiated.",
+    "category": "Lead Scoring and Lead Detail",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_USER}} into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_PASSWORD}} into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation link to the Obtain leads page"
+      },
+      {
+        "type": "action",
+        "description": "Fill a search term containing special characters into the leads search field"
+      },
+      {
+        "type": "action",
+        "description": "Export the leads as CSV"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a CSV export is initiated for the current filtered view"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC026",
+    "title": "Initiate user invite from Usuarios tab",
+    "description": "Verifies a tenant admin can navigate to the Usuarios tab and initiate an invite flow to add a new user.",
+    "category": "Tenant Sector Configuration (Settings)",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_USER}} into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_PASSWORD}} into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation link to the Settings page"
+      },
+      {
+        "type": "action",
+        "description": "Open the Usuarios tab"
+      },
+      {
+        "type": "action",
+        "description": "Initiate an invite for a new user"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify an invite form is displayed for entering the new user's details"
+      }
+    ],
+    "priority": "Low"
+  }
+]

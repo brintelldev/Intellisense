@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .env
+.env.*
 *.log
 drizzle/
 .vite/
@@ -9,3 +10,15 @@ __pycache__/
 pgdata/
 stitch_export/
 stitch_intellisense.zip
+
+# Agent / AI tooling
+.agent/
+
+# Test artifacts
+playwright-report/
+test-results/
+vitest_output.txt
+tests/e2e/.auth/
+
+# Testsprite (contains secrets)
+testsprite_tests/tmp/
