@@ -1,4 +1,12 @@
-import { funnelAlerts } from "../../../data/obtain-funnel";
+interface FunnelAlert {
+  id: string;
+  message: string;
+  severity: "critical" | "warning" | "info";
+}
+
+interface Props {
+  alerts: FunnelAlert[];
+}
 
 const SEVERITY_CONFIG = {
   critical: { bg: "bg-red-50 border-red-200", dot: "bg-red-500", text: "text-red-800", icon: "text-red-500" },
@@ -6,10 +14,12 @@ const SEVERITY_CONFIG = {
   info: { bg: "bg-blue-50 border-blue-200", dot: "bg-blue-400", text: "text-blue-800", icon: "text-blue-500" },
 };
 
-export function FunnelAlertCards() {
+export function FunnelAlertCards({ alerts }: Props) {
+  if (alerts.length === 0) return null;
+
   return (
     <div className="grid grid-cols-3 gap-4">
-      {funnelAlerts.map((alert) => {
+      {alerts.map((alert) => {
         const cfg = SEVERITY_CONFIG[alert.severity];
         return (
           <div key={alert.id} className={`rounded-xl p-4 border ${cfg.bg} flex gap-3`}>

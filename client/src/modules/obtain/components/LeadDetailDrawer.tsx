@@ -4,7 +4,6 @@ import { ShapWaterfall } from "../../../shared/components/ShapWaterfall";
 import { ScoreBadge } from "../../../shared/components/ScoreBadge";
 import { Progress } from "../../../shared/components/ui/progress";
 import { Lead } from "../../../data/types";
-import { allLeadScores } from "../../../data/obtain-scores";
 import { useObtainLead, useCreateLeadAction } from "../../../shared/hooks/useObtain";
 import { LoadingState } from "../../../shared/components/LoadingState";
 import { fmtBRLShort as fmtBRL } from "../../../shared/lib/format";
@@ -34,7 +33,7 @@ export function LeadDetailDrawer({ lead, onClose }: Props) {
   }, [lead?.id]);
 
   if (!lead) return null;
-  const score = apiLeadData ?? allLeadScores.find(s => s.leadId === lead.id);
+  const score = apiLeadData;
 
   const scoreColor = lead.score >= 80 ? "#10B981" : lead.score >= 50 ? "#f59e0b" : lead.score >= 30 ? "#94a3b8" : "#ef4444";
 

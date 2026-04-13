@@ -1,22 +1,39 @@
+import { useLocation } from "wouter";
 import { MetricCard } from "../../../shared/components/MetricCard";
 import { FunnelChart } from "../../../shared/components/FunnelChart";
 import { QuadrantMatrix } from "../../../shared/components/QuadrantMatrix";
 import { LeadQualityAreaChart } from "../components/LeadQualityAreaChart";
 import { ICPDistributionDonut } from "../components/ICPDistributionDonut";
-import { obtainDashboardKPIs, campaigns as mockCampaigns } from "../../../data/obtain-campaigns";
-import { funnelStages as mockFunnelStages } from "../../../data/obtain-funnel";
-import { useObtainDashboard, useObtainCampaigns, useObtainFunnel } from "../../../shared/hooks/useObtain";
+import { EmptyState } from "../../../shared/components/EmptyState";
+import { DataFreshnessIndicator } from "../../../shared/components/DataFreshnessIndicator";
 import { LoadingState } from "../../../shared/components/LoadingState";
-import { fmtBRLShort as fmtBRL, fmtBRLShort } from "../../../shared/lib/format";
+import { useObtainDashboard, useObtainCampaigns, useObtainFunnel, useObtainICPClusters, useLeadQualityTrend, useObtainDataFreshness } from "../../../shared/hooks/useObtain";
+import { fmtBRLShort as fmtBRL } from "../../../shared/lib/format";
 
 export default function ObtainDashboardPage() {
   const { data: dashData, isLoading: loadingDash } = useObtainDashboard();
   const { data: apiCampaigns, isLoading: loadingCampaigns } = useObtainCampaigns();
   const { data: apiFunnel, isLoading: loadingFunnel } = useObtainFunnel();
+  const { data: apiClusters } = useObtainICPClusters();
+  const { data: apiLeadQuality } = useLeadQualityTrend();
+  const { data: freshness } = useObtainDataFreshness();
+  const [, navigate] = useLocation();
 
-  const kpis = dashData?.kpis ?? obtainDashboardKPIs;
-  const campaigns = apiCampaigns ?? mockCampaigns;
-  const funnelStages = apiFunnel ?? mockFunnelStages;
+  if (loadingDash || loadingCampaigns || loadingFunnel) return <LoadingState rows={8} />;
+
+  const kpis = dashData?.kpis;
+  const campaigns = apiCampaigns ?? [];
+  const funnelStages = apiFunnel ?? [];
+
+  if (!kpis) {
+    return (
+      <EmptyState
+        title="Nenhum dado disponível"
+        description="Importe seus dados para visualizar o dashboard de aquisição."
+        action={{ label: "Importar dados", onClick: () => navigate("/obtain/upload") }}
+      />
+    );
+  }
 
   const CAMPAIGN_POINTS = campaigns.map((c: any) => ({
     x: c.cac / 1000,
@@ -26,13 +43,14 @@ export default function ObtainDashboardPage() {
     size: 12 + Math.sqrt(c.totalLeads),
   }));
 
-  if (loadingDash || loadingCampaigns || loadingFunnel) return <LoadingState rows={8} />;
-
   return (
     <div className="space-y-6 w-full">
       <div className="flex items-center gap-2">
         <h1 className="text-2xl font-bold text-slate-900">Dashboard Executivo</h1>
         <span className="text-xs font-semibold bg-[#10B981]/10 text-[#10B981] px-2.5 py-1 rounded-full">Obtain Sense</span>
+        <div className="ml-auto">
+          <DataFreshnessIndicator lastUploadAt={freshness?.lastUploadAt ?? null} totalRecords={freshness?.totalRecords} />
+        </div>
       </div>
 
       {/* KPIs */}
@@ -99,8 +117,8 @@ export default function ObtainDashboardPage() {
 
       {/* Charts row 2 */}
       <div className="grid grid-cols-2 gap-6">
-        <LeadQualityAreaChart />
-        <ICPDistributionDonut />
+        <LeadQualityAreaChart data={apiLeadQuality ?? []} />
+        <ICPDistributionDonut clusters={apiClusters ?? []} />
       </div>
     </div>
   );

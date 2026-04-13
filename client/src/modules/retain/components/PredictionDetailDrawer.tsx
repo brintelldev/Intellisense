@@ -7,7 +7,6 @@ import { LoadingState } from "../../../shared/components/LoadingState";
 import { useRetainPrediction, useCreateRetainAction } from "../../../shared/hooks/useRetain";
 import { fmtBRL } from "../../../shared/lib/format";
 import { Customer } from "../../../data/types";
-import { predictions as mockPredictions } from "../../../data/retain-predictions";
 
 interface Props {
   customer: Customer | null;
@@ -24,7 +23,7 @@ export function PredictionDetailDrawer({ customer, onClose }: Props) {
   }, [customer?.id]);
 
   if (!customer) return null;
-  const prediction = apiPrediction ?? mockPredictions.find(p => p.customerId === customer.id);
+  const prediction = apiPrediction;
 
   const healthColor = customer.healthScore < 40 ? "#ef4444" : customer.healthScore < 60 ? "#f59e0b" : "#64b783";
 

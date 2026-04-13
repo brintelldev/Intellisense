@@ -1,17 +1,37 @@
+import { useLocation } from "wouter";
 import { MetricCard } from "../../../shared/components/MetricCard";
 import { ChurnTrendChart } from "../components/ChurnTrendChart";
 import { RiskDistributionDonut } from "../components/RiskDistributionDonut";
 import { RevenueBySegmentBar } from "../components/RevenueBySegmentBar";
 import { HealthScoreGauge } from "../components/HealthScoreGauge";
 import { AlertsList } from "../components/AlertsList";
-import { useRetainDashboard } from "../../../shared/hooks/useRetain";
-import { dashboardKPIs as mockKPIs } from "../../../data/retain-analytics";
+import { EmptyState } from "../../../shared/components/EmptyState";
+import { DataFreshnessIndicator } from "../../../shared/components/DataFreshnessIndicator";
+import { LoadingState } from "../../../shared/components/LoadingState";
+import { useRetainDashboard, useRetainDataFreshness, useRetainAlerts, useRetainRevenueBySegment, useRetainAnalyticsTrend } from "../../../shared/hooks/useRetain";
 import { fmtBRLShort as fmtBRL } from "../../../shared/lib/format";
 
 export default function RetainDashboardPage() {
   const { data: apiData, isLoading } = useRetainDashboard();
+  const { data: freshness } = useRetainDataFreshness();
+  const { data: alertsData } = useRetainAlerts();
+  const { data: revenueBySegment } = useRetainRevenueBySegment();
+  const { data: analyticsTrend } = useRetainAnalyticsTrend();
+  const [, navigate] = useLocation();
 
-  const dashboardKPIs = apiData?.kpis ?? mockKPIs;
+  if (isLoading) return <LoadingState rows={8} />;
+
+  const dashboardKPIs = apiData?.kpis;
+
+  if (!dashboardKPIs) {
+    return (
+      <EmptyState
+        title="Nenhum dado disponível"
+        description="Importe seus dados para visualizar o dashboard de retenção."
+        action={{ label: "Importar dados", onClick: () => navigate("/retain/upload") }}
+      />
+    );
+  }
 
   return (
     <div className="space-y-6 w-full">
@@ -23,6 +43,9 @@ export default function RetainDashboardPage() {
             <span className="text-xs font-semibold bg-[#293b83]/10 text-[#293b83] px-2.5 py-1 rounded-full">Retain Sense</span>
           </div>
           <p className="text-sm text-slate-500 mt-0.5">Visão geral de retenção e risco da base de clientes</p>
+        </div>
+        <div className="ml-auto">
+          <DataFreshnessIndicator lastUploadAt={freshness?.lastUploadAt ?? null} totalRecords={freshness?.totalRecords} />
         </div>
       </div>
 
@@ -64,18 +87,18 @@ export default function RetainDashboardPage() {
 
       {/* Charts row 1 */}
       <div className="grid grid-cols-2 gap-6">
-        <ChurnTrendChart />
-        <RiskDistributionDonut />
+        <ChurnTrendChart data={analyticsTrend ?? []} />
+        <RiskDistributionDonut data={apiData?.riskDistribution ?? { low: 0, medium: 0, high: 0, critical: 0 }} />
       </div>
 
       {/* Charts row 2 */}
       <div className="grid grid-cols-2 gap-6">
-        <RevenueBySegmentBar />
-        <HealthScoreGauge />
+        <RevenueBySegmentBar data={revenueBySegment ?? []} />
+        <HealthScoreGauge value={dashboardKPIs.avgHealthScore ?? 0} />
       </div>
 
       {/* Alerts */}
-      <AlertsList />
+      <AlertsList alerts={alertsData ?? []} />
     </div>
   );
 }

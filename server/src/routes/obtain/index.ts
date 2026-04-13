@@ -8,7 +8,11 @@ import { eq, and, desc, asc, ilike, sql, SQL } from "drizzle-orm";
 import {
   leads, obtainScores, obtainCampaigns, obtainCampaignRoi,
   obtainIcpClusters, obtainFunnelMetrics, obtainLeadActions, obtainUploads,
+  obtainAlerts, leadScoreHistory,
 } from "../../../../shared/schema.js";
+import { runObtainScoring, generateObtainAlerts } from "../../engine/obtain-scoring.js";
+import { generateIcpClusters } from "../../engine/icp-clustering.js";
+import { suggestMapping } from "../../engine/column-mapper.js";
 
 export const obtainRouter = Router();
 const upload = multer({ storage: multer.diskStorage({ destination: os.tmpdir() }), limits: { fileSize: 50 * 1024 * 1024 } });
@@ -315,10 +319,13 @@ obtainRouter.post("/uploads", upload.single("file"), async (req, res) => {
     let mapping: Record<string, string> = {};
     try { mapping = JSON.parse(req.body.mapping ?? "{}"); } catch { /* no mapping */ }
 
+    const tenantId = req.tenantId!;
+
     [uploadRow] = await db.insert(obtainUploads).values({
-      tenantId: req.tenantId!,
+      tenantId,
       filename: file.originalname,
       status: "processing",
+      columnMapping: mapping,
       uploadedBy: req.session.userId,
     }).returning();
 
@@ -345,52 +352,110 @@ obtainRouter.post("/uploads", upload.single("file"), async (req, res) => {
     // Pre-fetch campaigns for lookup by name
     const campaignRows = await db.select({ id: obtainCampaigns.id, name: obtainCampaigns.name })
       .from(obtainCampaigns)
-      .where(eq(obtainCampaigns.tenantId, req.tenantId!));
+      .where(eq(obtainCampaigns.tenantId, tenantId));
     const campaignByName = new Map(campaignRows.map(c => [c.name.toLowerCase(), c.id]));
 
-    const leadRows = parsed.data.map((row) => {
-      const rawCompanySize = get(row, "companySize");
-      const companySize = VALID_COMPANY_SIZES.includes(rawCompanySize as any)
-        ? rawCompanySize as typeof VALID_COMPANY_SIZES[number]
-        : null;
+    // Pre-fetch existing leads for upsert
+    const existingLeads = await db
+      .select({ id: leads.id, email: leads.email })
+      .from(leads)
+      .where(eq(leads.tenantId, tenantId));
+    const existingByEmail = new Map(
+      existingLeads
+        .filter((l) => l.email)
+        .map((l) => [l.email!.toLowerCase(), l.id]),
+    );
 
-      const rawSource = get(row, "source");
-      const source = VALID_LEAD_SOURCES.includes(rawSource as any)
-        ? rawSource as typeof VALID_LEAD_SOURCES[number]
-        : "csv" as const;
+    let rowsCreated = 0;
+    let rowsUpdated = 0;
+    let rowsSkipped = 0;
+    const errors: Array<{ row: number; reason: string }> = [];
 
-      const campaignName = get(row, "campaign");
-      const campaignId = campaignName
-        ? (campaignByName.get(campaignName.toLowerCase()) ?? null)
-        : null;
+    for (let i = 0; i < parsed.data.length; i++) {
+      const row = parsed.data[i];
+      try {
+        const name = get(row, "name") ?? row[Object.keys(row)[0]] ?? "";
+        if (!name || name.trim() === "") {
+          rowsSkipped++;
+          errors.push({ row: i + 1, reason: "Nome vazio" });
+          continue;
+        }
 
-      return {
-        tenantId: req.tenantId!,
-        name: get(row, "name") ?? row[Object.keys(row)[0]] ?? "Sem nome",
-        company: get(row, "company") ?? undefined,
-        industry: get(row, "industry") ?? undefined,
-        companySize: companySize ?? undefined,
-        city: get(row, "city") ?? undefined,
-        state: get(row, "state") ?? undefined,
-        email: get(row, "email") ?? undefined,
-        phone: get(row, "phone") ?? undefined,
-        source,
-        status: "new" as const,
-        campaignId: campaignId ?? undefined,
-        rawData: row,
-      };
-    });
+        const rawCompanySize = get(row, "companySize");
+        const companySize = VALID_COMPANY_SIZES.includes(rawCompanySize as any)
+          ? rawCompanySize as typeof VALID_COMPANY_SIZES[number]
+          : null;
 
-    if (leadRows.length > 0) {
-      await db.insert(leads).values(leadRows);
+        const rawSource = get(row, "source");
+        const source = VALID_LEAD_SOURCES.includes(rawSource as any)
+          ? rawSource as typeof VALID_LEAD_SOURCES[number]
+          : "csv" as const;
+
+        const campaignName = get(row, "campaign");
+        const campaignId = campaignName
+          ? (campaignByName.get(campaignName.toLowerCase()) ?? null)
+          : null;
+
+        const email = get(row, "email")?.trim().toLowerCase();
+
+        const leadData = {
+          tenantId,
+          name: name.trim(),
+          company: get(row, "company") ?? undefined,
+          industry: get(row, "industry") ?? undefined,
+          companySize: companySize ?? undefined,
+          city: get(row, "city") ?? undefined,
+          state: get(row, "state") ?? undefined,
+          email: email ?? undefined,
+          phone: get(row, "phone") ?? undefined,
+          source,
+          campaignId: campaignId ?? undefined,
+          rawData: row,
+          updatedAt: new Date(),
+        };
+
+        // Upsert by email
+        const existingId = email ? existingByEmail.get(email) : undefined;
+
+        if (existingId) {
+          await db.update(leads).set(leadData).where(eq(leads.id, existingId));
+          rowsUpdated++;
+        } else {
+          const [inserted] = await db.insert(leads)
+            .values({ ...leadData, status: "new" as const })
+            .returning({ id: leads.id });
+          if (email) existingByEmail.set(email, inserted.id);
+          rowsCreated++;
+        }
+      } catch (rowErr: any) {
+        rowsSkipped++;
+        errors.push({ row: i + 1, reason: rowErr?.message ?? "Erro desconhecido" });
+      }
     }
 
+    // ── Post-processing pipeline ─────────────────────────────────────────
+    const { scoresGenerated } = await runObtainScoring(tenantId);
+    await generateIcpClusters(tenantId);
+    const { alertsGenerated } = await generateObtainAlerts(tenantId);
+
     const [done] = await db.update(obtainUploads)
-      .set({ status: "completed", rowsCount: leadRows.length, processedAt: new Date() })
+      .set({
+        status: "completed",
+        rowsCount: parsed.data.length,
+        rowsCreated,
+        rowsUpdated,
+        rowsSkipped,
+        processedAt: new Date(),
+      })
       .where(eq(obtainUploads.id, uploadRow.id))
       .returning();
 
-    res.status(201).json(done);
+    res.status(201).json({
+      ...done,
+      scoresGenerated,
+      alertsGenerated,
+      errors: errors.slice(0, 20),
+    });
   } catch (err: any) {
     console.error("Obtain upload error:", err);
     if (uploadRow) {
@@ -402,5 +467,153 @@ obtainRouter.post("/uploads", upload.single("file"), async (req, res) => {
     res.status(500).json({ error: "Erro ao processar upload" });
   } finally {
     if (file?.path) fs.unlink(file.path, () => {});
+  }
+});
+
+// ─── POST /upload/suggest-mapping ───────────────────────────────────────────
+obtainRouter.post("/upload/suggest-mapping", async (req, res) => {
+  try {
+    const { headers, sampleRows } = req.body;
+    if (!headers || !Array.isArray(headers)) {
+      return res.status(400).json({ error: "headers é obrigatório (array de strings)" });
+    }
+    const suggestions = suggestMapping(headers, sampleRows ?? [], "obtain");
+    res.json(suggestions);
+  } catch (err) {
+    console.error("Suggest mapping error:", err);
+    res.status(500).json({ error: "Erro ao sugerir mapeamento" });
+  }
+});
+
+// ─── GET /alerts ────────────────────────────────────────────────────────────
+obtainRouter.get("/alerts", async (req, res) => {
+  try {
+    const tenantId = req.tenantId!;
+    const severity = req.query.severity as string | undefined;
+    const isRead = req.query.isRead as string | undefined;
+
+    const conditions: SQL[] = [eq(obtainAlerts.tenantId, tenantId)];
+    if (severity) conditions.push(eq(obtainAlerts.severity, severity as any));
+    if (isRead === "true") conditions.push(eq(obtainAlerts.isRead, true));
+    if (isRead === "false") conditions.push(eq(obtainAlerts.isRead, false));
+
+    const rows = await db
+      .select({
+        alert: obtainAlerts,
+        leadName: leads.name,
+        leadCompany: leads.company,
+      })
+      .from(obtainAlerts)
+      .innerJoin(leads, eq(obtainAlerts.leadId, leads.id))
+      .where(and(...conditions))
+      .orderBy(desc(obtainAlerts.createdAt))
+      .limit(50);
+
+    const data = rows.map((r) => ({
+      id: r.alert.id,
+      leadId: r.alert.leadId,
+      leadName: r.leadName,
+      leadCompany: r.leadCompany,
+      type: r.alert.type,
+      message: r.alert.message,
+      severity: r.alert.severity,
+      isRead: r.alert.isRead,
+      createdAt: r.alert.createdAt,
+    }));
+
+    res.json(data);
+  } catch (err) {
+    console.error("Obtain alerts error:", err);
+    res.status(500).json({ error: "Erro ao buscar alertas" });
+  }
+});
+
+// ─── PATCH /alerts/:id/read ─────────────────────────────────────────────────
+obtainRouter.patch("/alerts/:id/read", async (req, res) => {
+  try {
+    const [updated] = await db.update(obtainAlerts)
+      .set({ isRead: true })
+      .where(and(eq(obtainAlerts.id, req.params.id), eq(obtainAlerts.tenantId, req.tenantId!)))
+      .returning();
+    if (!updated) return res.status(404).json({ error: "Alerta não encontrado" });
+    res.json(updated);
+  } catch (err) {
+    console.error("Mark alert read error:", err);
+    res.status(500).json({ error: "Erro ao atualizar alerta" });
+  }
+});
+
+// ─── GET /data-freshness ────────────────────────────────────────────────────
+obtainRouter.get("/data-freshness", async (req, res) => {
+  try {
+    const tenantId = req.tenantId!;
+    const [lastUpload] = await db.select()
+      .from(obtainUploads)
+      .where(and(eq(obtainUploads.tenantId, tenantId), eq(obtainUploads.status, "completed")))
+      .orderBy(desc(obtainUploads.processedAt))
+      .limit(1);
+
+    const [countRow] = await db.select({ count: sql<number>`count(*)::int` })
+      .from(leads)
+      .where(eq(leads.tenantId, tenantId));
+
+    res.json({
+      lastUploadAt: lastUpload?.processedAt ?? null,
+      lastUploadFilename: lastUpload?.filename ?? null,
+      totalRecords: countRow?.count ?? 0,
+    });
+  } catch (err) {
+    console.error("Data freshness error:", err);
+    res.status(500).json({ error: "Erro ao buscar freshness" });
+  }
+});
+
+// ─── GET /leads/:id/score-history ───────────────────────────────────────────
+obtainRouter.get("/leads/:id/score-history", async (req, res) => {
+  try {
+    const rows = await db.select()
+      .from(leadScoreHistory)
+      .where(and(
+        eq(leadScoreHistory.leadId, req.params.id),
+        eq(leadScoreHistory.tenantId, req.tenantId!),
+      ))
+      .orderBy(asc(leadScoreHistory.snapshotDate));
+    res.json(rows);
+  } catch (err) {
+    console.error("Lead score history error:", err);
+    res.status(500).json({ error: "Erro ao buscar histórico" });
+  }
+});
+
+// ─── GET /lead-quality-trend ────────────────────────────────────────────────
+obtainRouter.get("/lead-quality-trend", async (req, res) => {
+  try {
+    const rows = await db.select({
+      snapshotDate: leadScoreHistory.snapshotDate,
+      scoreTier: leadScoreHistory.scoreTier,
+      count: sql<number>`count(*)::int`,
+    })
+      .from(leadScoreHistory)
+      .where(eq(leadScoreHistory.tenantId, req.tenantId!))
+      .groupBy(leadScoreHistory.snapshotDate, leadScoreHistory.scoreTier)
+      .orderBy(asc(leadScoreHistory.snapshotDate));
+
+    // Group by date
+    const byDate = new Map<string, Record<string, number>>();
+    for (const r of rows) {
+      const date = String(r.snapshotDate);
+      if (!byDate.has(date)) byDate.set(date, { hot: 0, warm: 0, cold: 0, disqualified: 0 });
+      byDate.get(date)![r.scoreTier] = r.count;
+    }
+
+    const data = Array.from(byDate.entries()).map(([date, tiers]) => ({
+      date,
+      ...tiers,
+    }));
+
+    res.json(data);
+  } catch (err) {
+    console.error("Lead quality trend error:", err);
+    res.status(500).json({ error: "Erro ao buscar tendência" });
   }
 });

@@ -97,6 +97,58 @@ export function useUploadObtainCSV() {
       }
       return res.json();
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["obtain", "uploads"] }); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["obtain"] }); },
+  });
+}
+
+// ─── Alerts ─────────────────────────────────────────────────────────────────
+export function useObtainAlerts(params: { severity?: string; isRead?: string } = {}) {
+  return useQuery({
+    queryKey: ["obtain", "alerts", params],
+    queryFn: () => api.get<any[]>(`/obtain/alerts${qs(params)}`),
+    staleTime: 30_000,
+  });
+}
+
+export function useMarkObtainAlertRead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.patch(`/obtain/alerts/${id}/read`, {}),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["obtain", "alerts"] }); },
+  });
+}
+
+// ─── Data Freshness ─────────────────────────────────────────────────────────
+export function useObtainDataFreshness() {
+  return useQuery({
+    queryKey: ["obtain", "data-freshness"],
+    queryFn: () => api.get<{ lastUploadAt: string | null; lastUploadFilename: string | null; totalRecords: number }>("/obtain/data-freshness"),
+    staleTime: 60_000,
+  });
+}
+
+// ─── Lead Score History ─────────────────────────────────────────────────────
+export function useLeadScoreHistory(leadId: string | null) {
+  return useQuery({
+    queryKey: ["obtain", "score-history", leadId],
+    queryFn: () => api.get<any[]>(`/obtain/leads/${leadId}/score-history`),
+    enabled: !!leadId,
+  });
+}
+
+// ─── Lead Quality Trend ─────────────────────────────────────────────────────
+export function useLeadQualityTrend() {
+  return useQuery({
+    queryKey: ["obtain", "lead-quality-trend"],
+    queryFn: () => api.get<any[]>("/obtain/lead-quality-trend"),
+    staleTime: 60_000,
+  });
+}
+
+// ─── Suggest Mapping ────────────────────────────────────────────────────────
+export function useSuggestObtainMapping() {
+  return useMutation({
+    mutationFn: (data: { headers: string[]; sampleRows: Record<string, string>[] }) =>
+      api.post<any[]>("/obtain/upload/suggest-mapping", data),
   });
 }

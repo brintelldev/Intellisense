@@ -7,8 +7,17 @@ import { db } from "../../db.js";
 import { eq, and, desc, asc, ilike, sql, SQL } from "drizzle-orm";
 import {
   customers, retainPredictions, retainChurnCauses, retainAnalytics,
-  retainActions, retainUploads,
+  retainActions, retainUploads, retainAlerts, customerScoreHistory,
+  customerNotes,
 } from "../../../../shared/schema.js";
+import {
+  runRetainPredictions,
+  generateAnalyticsSnapshot,
+  generateChurnCauses,
+  generateAlerts,
+} from "../../engine/retain-scoring.js";
+import { generateIcpClusters } from "../../engine/icp-clustering.js";
+import { suggestMapping } from "../../engine/column-mapper.js";
 
 export const retainRouter = Router();
 // Use diskStorage to avoid loading CSV files into Node heap memory
@@ -323,36 +332,6 @@ retainRouter.get("/uploads", async (req, res) => {
 });
 
 // ─── POST /uploads ───────────────────────────────────────────────────────────
-const RETAIN_FIELD_MAP: Record<string, string> = {
-  id: "customerCode",
-  name: "name",
-  revenue: "dimRevenue",
-  paymentRegularity: "dimPaymentRegularity",
-  tenureDays: "dimTenureDays",
-  interactionFrequency: "dimInteractionFrequency",
-  supportVolume: "dimSupportVolume",
-  satisfaction: "dimSatisfaction",
-  contractRemainingDays: "dimContractRemainingDays",
-  usageIntensity: "dimUsageIntensity",
-  recencyDays: "dimRecencyDays",
-};
-
-function calcHealthScore(dims: Record<string, number | null>): number {
-  const w = (key: string, weight: number, invert = false) => {
-    const v = dims[key];
-    if (v == null) return weight * 0.5; // neutral if unmapped
-    const norm = Math.min(Math.max(v / 100, 0), 1);
-    return weight * (invert ? 1 - norm : norm);
-  };
-  const score =
-    w("dimSatisfaction", 25) +
-    w("dimPaymentRegularity", 20) +
-    w("dimUsageIntensity", 20) +
-    w("dimInteractionFrequency", 15) +
-    w("dimContractRemainingDays", 10) +
-    (10 * (1 - Math.min((dims["dimSupportVolume"] ?? 5) / 20, 1)));
-  return Math.round(Math.min(Math.max(score, 0), 100));
-}
 
 retainRouter.post("/uploads", upload.single("file"), async (req, res) => {
   const file = req.file;
@@ -364,10 +343,13 @@ retainRouter.post("/uploads", upload.single("file"), async (req, res) => {
     let mapping: Record<string, string> = {};
     try { mapping = JSON.parse(req.body.mapping ?? "{}"); } catch { /* no mapping */ }
 
+    const tenantId = req.tenantId!;
+
     [uploadRow] = await db.insert(retainUploads).values({
-      tenantId: req.tenantId!,
+      tenantId,
       filename: file.originalname,
       status: "processing",
+      columnMapping: mapping,
       uploadedBy: req.session.userId,
     }).returning();
 
@@ -386,77 +368,122 @@ retainRouter.post("/uploads", upload.single("file"), async (req, res) => {
       return res.status(400).json({ error: "CSV inválido: " + parsed.errors[0].message });
     }
 
-    // Build customer rows applying mapping
-    const customerRows = parsed.data.map((row) => {
-      const dims: Record<string, number | null> = {};
+    // Helper functions
+    const get = (row: Record<string, string>, key: string) => {
+      const csvCol = mapping[key];
+      return csvCol ? row[csvCol] : undefined;
+    };
+    const toFloat = (v: string | undefined) => {
+      if (!v) return null;
+      const n = parseFloat(v.replace(",", "."));
+      return isNaN(n) ? null : n;
+    };
+    const toInt = (v: string | undefined) => {
+      if (!v) return null;
+      const n = parseInt(v, 10);
+      return isNaN(n) ? null : n;
+    };
 
-      // Helper: get CSV value for a system field key via user mapping
-      const get = (key: string) => {
-        const csvCol = mapping[key];
-        return csvCol ? row[csvCol] : undefined;
-      };
+    // Load existing customers for upsert check
+    const existingCustomers = await db
+      .select({ id: customers.id, customerCode: customers.customerCode })
+      .from(customers)
+      .where(eq(customers.tenantId, tenantId));
+    const existingByCode = new Map(
+      existingCustomers
+        .filter((c) => c.customerCode)
+        .map((c) => [c.customerCode!, c.id]),
+    );
 
-      const toFloat = (v: string | undefined) => {
-        if (!v) return null;
-        const n = parseFloat(v.replace(",", "."));
-        return isNaN(n) ? null : n;
-      };
-      const toInt = (v: string | undefined) => {
-        if (!v) return null;
-        const n = parseInt(v, 10);
-        return isNaN(n) ? null : n;
-      };
+    let rowsCreated = 0;
+    let rowsUpdated = 0;
+    let rowsSkipped = 0;
+    const errors: Array<{ row: number; reason: string }> = [];
 
-      dims["dimRevenue"] = toFloat(get("revenue"));
-      dims["dimPaymentRegularity"] = toFloat(get("paymentRegularity"));
-      dims["dimTenureDays"] = toInt(get("tenureDays"));
-      dims["dimInteractionFrequency"] = toFloat(get("interactionFrequency"));
-      dims["dimSupportVolume"] = toFloat(get("supportVolume"));
-      dims["dimSatisfaction"] = toFloat(get("satisfaction"));
-      dims["dimContractRemainingDays"] = toInt(get("contractRemainingDays"));
-      dims["dimUsageIntensity"] = toFloat(get("usageIntensity"));
-      dims["dimRecencyDays"] = toInt(get("recencyDays"));
+    // Process each row
+    for (let i = 0; i < parsed.data.length; i++) {
+      const row = parsed.data[i];
+      try {
+        const name = get(row, "name") ?? row[Object.keys(row)[0]] ?? "";
+        if (!name || name.trim() === "") {
+          rowsSkipped++;
+          errors.push({ row: i + 1, reason: "Nome vazio" });
+          continue;
+        }
 
-      const healthScore = calcHealthScore(dims);
-      const churnProbability = Math.round((100 - healthScore)) / 100;
-      const riskLevel =
-        healthScore < 30 ? "critical" :
-        healthScore < 50 ? "high" :
-        healthScore < 65 ? "medium" : "low";
+        const customerCode = get(row, "id") ?? undefined;
 
-      return {
-        tenantId: req.tenantId!,
-        customerCode: get("id") ?? undefined,
-        name: get("name") ?? row[Object.keys(row)[0]] ?? "Sem nome",
-        dimRevenue: dims["dimRevenue"],
-        dimPaymentRegularity: dims["dimPaymentRegularity"],
-        dimTenureDays: dims["dimTenureDays"],
-        dimInteractionFrequency: dims["dimInteractionFrequency"],
-        dimSupportVolume: dims["dimSupportVolume"],
-        dimSatisfaction: dims["dimSatisfaction"],
-        dimContractRemainingDays: dims["dimContractRemainingDays"],
-        dimUsageIntensity: dims["dimUsageIntensity"],
-        dimRecencyDays: dims["dimRecencyDays"],
-        healthScore,
-        churnProbability,
-        riskLevel: riskLevel as "low" | "medium" | "high" | "critical",
-        status: "active" as const,
-        rawData: row,
-      };
-    });
+        const customerData = {
+          tenantId,
+          customerCode,
+          name: name.trim(),
+          email: get(row, "email") ?? undefined,
+          phone: get(row, "phone") ?? undefined,
+          city: get(row, "city") ?? undefined,
+          state: get(row, "state") ?? undefined,
+          segment: get(row, "segment") ?? undefined,
+          dimRevenue: toFloat(get(row, "revenue")),
+          dimPaymentRegularity: toFloat(get(row, "paymentRegularity")),
+          dimTenureDays: toInt(get(row, "tenureDays")),
+          dimInteractionFrequency: toFloat(get(row, "interactionFrequency")),
+          dimSupportVolume: toFloat(get(row, "supportVolume")),
+          dimSatisfaction: toFloat(get(row, "satisfaction")),
+          dimContractRemainingDays: toInt(get(row, "contractRemainingDays")),
+          dimUsageIntensity: toFloat(get(row, "usageIntensity")),
+          dimRecencyDays: toInt(get(row, "recencyDays")),
+          rawData: row,
+          updatedAt: new Date(),
+        };
 
-    // Batch insert
-    if (customerRows.length > 0) {
-      await db.insert(customers).values(customerRows);
+        // Upsert: check if customer exists by code
+        const existingId = customerCode ? existingByCode.get(customerCode) : undefined;
+
+        if (existingId) {
+          await db.update(customers)
+            .set(customerData)
+            .where(eq(customers.id, existingId));
+          rowsUpdated++;
+        } else {
+          const [inserted] = await db.insert(customers)
+            .values({ ...customerData, status: "active" as const })
+            .returning({ id: customers.id });
+          if (customerCode) {
+            existingByCode.set(customerCode, inserted.id);
+          }
+          rowsCreated++;
+        }
+      } catch (rowErr: any) {
+        rowsSkipped++;
+        errors.push({ row: i + 1, reason: rowErr?.message ?? "Erro desconhecido" });
+      }
     }
 
-    // Update upload record
+    // ── Post-processing pipeline ─────────────────────────────────────────
+    const { predictionsGenerated } = await runRetainPredictions(tenantId);
+    await generateAnalyticsSnapshot(tenantId);
+    await generateChurnCauses(tenantId);
+    const { alertsGenerated } = await generateAlerts(tenantId);
+    await generateIcpClusters(tenantId); // feedback loop!
+
+    // Update upload record with final stats
     const [done] = await db.update(retainUploads)
-      .set({ status: "completed", rowsCount: customerRows.length, processedAt: new Date() })
+      .set({
+        status: "completed",
+        rowsCount: parsed.data.length,
+        rowsCreated,
+        rowsUpdated,
+        rowsSkipped,
+        processedAt: new Date(),
+      })
       .where(eq(retainUploads.id, uploadRow.id))
       .returning();
 
-    res.status(201).json(done);
+    res.status(201).json({
+      ...done,
+      predictionsGenerated,
+      alertsGenerated,
+      errors: errors.slice(0, 20), // limit error details
+    });
   } catch (err: any) {
     console.error("Retain upload error:", err);
     if (uploadRow) {
@@ -468,5 +495,204 @@ retainRouter.post("/uploads", upload.single("file"), async (req, res) => {
     res.status(500).json({ error: "Erro ao processar upload" });
   } finally {
     if (file?.path) fs.unlink(file.path, () => {});
+  }
+});
+
+// ─── POST /upload/suggest-mapping ───────────────────────────────────────────
+retainRouter.post("/upload/suggest-mapping", async (req, res) => {
+  try {
+    const { headers, sampleRows } = req.body;
+    if (!headers || !Array.isArray(headers)) {
+      return res.status(400).json({ error: "headers é obrigatório (array de strings)" });
+    }
+    const suggestions = suggestMapping(headers, sampleRows ?? [], "retain");
+    res.json(suggestions);
+  } catch (err) {
+    console.error("Suggest mapping error:", err);
+    res.status(500).json({ error: "Erro ao sugerir mapeamento" });
+  }
+});
+
+// ─── GET /alerts ────────────────────────────────────────────────────────────
+retainRouter.get("/alerts", async (req, res) => {
+  try {
+    const tenantId = req.tenantId!;
+    const severity = req.query.severity as string | undefined;
+    const isRead = req.query.isRead as string | undefined;
+
+    const conditions: SQL[] = [eq(retainAlerts.tenantId, tenantId)];
+    if (severity) conditions.push(eq(retainAlerts.severity, severity as any));
+    if (isRead === "true") conditions.push(eq(retainAlerts.isRead, true));
+    if (isRead === "false") conditions.push(eq(retainAlerts.isRead, false));
+
+    const rows = await db
+      .select({
+        alert: retainAlerts,
+        customerName: customers.name,
+      })
+      .from(retainAlerts)
+      .innerJoin(customers, eq(retainAlerts.customerId, customers.id))
+      .where(and(...conditions))
+      .orderBy(desc(retainAlerts.createdAt))
+      .limit(50);
+
+    const data = rows.map((r) => ({
+      id: r.alert.id,
+      customerId: r.alert.customerId,
+      customerName: r.customerName,
+      type: r.alert.type,
+      message: r.alert.message,
+      severity: r.alert.severity,
+      isRead: r.alert.isRead,
+      createdAt: r.alert.createdAt,
+    }));
+
+    res.json(data);
+  } catch (err) {
+    console.error("Retain alerts error:", err);
+    res.status(500).json({ error: "Erro ao buscar alertas" });
+  }
+});
+
+// ─── PATCH /alerts/:id/read ─────────────────────────────────────────────────
+retainRouter.patch("/alerts/:id/read", async (req, res) => {
+  try {
+    const [updated] = await db.update(retainAlerts)
+      .set({ isRead: true })
+      .where(and(eq(retainAlerts.id, req.params.id), eq(retainAlerts.tenantId, req.tenantId!)))
+      .returning();
+    if (!updated) return res.status(404).json({ error: "Alerta não encontrado" });
+    res.json(updated);
+  } catch (err) {
+    console.error("Mark alert read error:", err);
+    res.status(500).json({ error: "Erro ao atualizar alerta" });
+  }
+});
+
+// ─── GET /data-freshness ────────────────────────────────────────────────────
+retainRouter.get("/data-freshness", async (req, res) => {
+  try {
+    const tenantId = req.tenantId!;
+    const [lastUpload] = await db.select()
+      .from(retainUploads)
+      .where(and(eq(retainUploads.tenantId, tenantId), eq(retainUploads.status, "completed")))
+      .orderBy(desc(retainUploads.processedAt))
+      .limit(1);
+
+    const [countRow] = await db.select({ count: sql<number>`count(*)::int` })
+      .from(customers)
+      .where(eq(customers.tenantId, tenantId));
+
+    res.json({
+      lastUploadAt: lastUpload?.processedAt ?? null,
+      lastUploadFilename: lastUpload?.filename ?? null,
+      totalRecords: countRow?.count ?? 0,
+    });
+  } catch (err) {
+    console.error("Data freshness error:", err);
+    res.status(500).json({ error: "Erro ao buscar freshness" });
+  }
+});
+
+// ─── GET /revenue-by-segment ────────────────────────────────────────────────
+retainRouter.get("/revenue-by-segment", async (req, res) => {
+  try {
+    const rows = await db.select({
+      segment: customers.segment,
+      totalRevenue: sql<number>`coalesce(sum(${customers.dimRevenue}), 0)::real`,
+      count: sql<number>`count(*)::int`,
+    })
+      .from(customers)
+      .where(and(eq(customers.tenantId, req.tenantId!), sql`${customers.status} != 'churned'`))
+      .groupBy(customers.segment);
+
+    res.json(rows.map((r) => ({
+      segment: r.segment ?? "Sem segmento",
+      totalRevenue: r.totalRevenue,
+      count: r.count,
+    })));
+  } catch (err) {
+    console.error("Revenue by segment error:", err);
+    res.status(500).json({ error: "Erro ao buscar receita por segmento" });
+  }
+});
+
+// ─── GET /customers/:id/score-history ───────────────────────────────────────
+retainRouter.get("/customers/:id/score-history", async (req, res) => {
+  try {
+    const rows = await db.select()
+      .from(customerScoreHistory)
+      .where(and(
+        eq(customerScoreHistory.customerId, req.params.id),
+        eq(customerScoreHistory.tenantId, req.tenantId!),
+      ))
+      .orderBy(asc(customerScoreHistory.snapshotDate));
+    res.json(rows);
+  } catch (err) {
+    console.error("Score history error:", err);
+    res.status(500).json({ error: "Erro ao buscar histórico" });
+  }
+});
+
+// ─── GET /customers/:id/notes ───────────────────────────────────────────────
+retainRouter.get("/customers/:id/notes", async (req, res) => {
+  try {
+    const rows = await db.select()
+      .from(customerNotes)
+      .where(and(
+        eq(customerNotes.customerId, req.params.id),
+        eq(customerNotes.tenantId, req.tenantId!),
+      ))
+      .orderBy(desc(customerNotes.createdAt));
+    res.json(rows);
+  } catch (err) {
+    console.error("Customer notes error:", err);
+    res.status(500).json({ error: "Erro ao buscar notas" });
+  }
+});
+
+// ─── POST /customers/:id/notes ──────────────────────────────────────────────
+retainRouter.post("/customers/:id/notes", async (req, res) => {
+  try {
+    const { type, content } = req.body;
+    if (!content || content.trim() === "") {
+      return res.status(400).json({ error: "Conteúdo é obrigatório" });
+    }
+    const [note] = await db.insert(customerNotes).values({
+      tenantId: req.tenantId!,
+      customerId: req.params.id,
+      userId: req.session.userId,
+      type: type ?? "note",
+      content: content.trim(),
+    }).returning();
+    res.status(201).json(note);
+  } catch (err) {
+    console.error("Create note error:", err);
+    res.status(500).json({ error: "Erro ao criar nota" });
+  }
+});
+
+// ─── POST /customers/:id/churn ──────────────────────────────────────────────
+retainRouter.post("/customers/:id/churn", async (req, res) => {
+  try {
+    const tenantId = req.tenantId!;
+    const [updated] = await db.update(customers)
+      .set({
+        status: "churned",
+        churnDate: new Date().toISOString().split("T")[0],
+        updatedAt: new Date(),
+      })
+      .where(and(eq(customers.id, req.params.id), eq(customers.tenantId, tenantId)))
+      .returning();
+
+    if (!updated) return res.status(404).json({ error: "Cliente não encontrado" });
+
+    // Recalculate ICP clusters (feedback loop)
+    await generateIcpClusters(tenantId);
+
+    res.json({ ...mapCustomerToDto(updated), message: "Cliente marcado como churned. ICP recalculado." });
+  } catch (err) {
+    console.error("Mark churn error:", err);
+    res.status(500).json({ error: "Erro ao marcar churn" });
   }
 });

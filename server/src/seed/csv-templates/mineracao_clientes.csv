@@ -1,0 +1,16 @@
+codigo,razao_social,segmento,faturamento_mensal,dias_atraso_pgto,meses_contrato,frequencia_contato,chamados_abertos,nps,dias_restantes_contrato,horas_maquina_mes,dias_sem_pedido
+MIN001,Mineradora Vale Norte Ltda,Mineração,185000,2,36,85,1,82,290,92,3
+MIN002,Extração Goiás Central SA,Mineração,142000,0,24,72,0,78,180,88,5
+MIN003,Mineração Serra Dourada,Mineração,98000,45,18,15,8,18,22,12,62
+MIN004,Britagem Tocantins ME,Mineração,67000,32,12,20,6,25,45,18,48
+MIN005,Pedreira São Paulo Ltda,Mineração,210000,1,48,90,0,91,350,95,2
+MIN006,Minera Rio Araguaia SA,Mineração,155000,5,30,65,2,65,120,72,8
+MIN007,Cascalho Norte Extração,Mineração,78000,0,14,88,1,75,200,80,4
+MIN008,Mineradora Planalto Central,Mineração,120000,18,20,40,4,42,60,35,28
+MIN009,Extração Diamantina Ltda,Mineração,195000,3,42,82,1,85,310,90,3
+MIN010,Grupo Minero Cerrado SA,Mineração,250000,0,60,95,0,92,400,98,1
+MIN011,Pedras Brasil Mineração,Mineração,88000,25,10,30,5,32,30,22,38
+MIN012,Calcário Minas Ltda,Mineração,105000,8,22,55,3,58,90,60,12
+MIN013,Mineradora Chapada Real,Mineração,175000,1,38,78,1,80,270,85,4
+MIN014,Areia e Brita Central ME,Mineração,55000,60,8,10,12,12,15,8,75
+MIN015,Ferro Norte Mineração SA,Mineração,320000,0,72,92,0,95,500,97,1

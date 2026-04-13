@@ -1,16 +1,26 @@
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import { dashboardKPIs } from "../../../data/retain-analytics";
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 
-const RISK_DATA = [
-  { name: "Baixo", value: dashboardKPIs.riskDistribution.low, color: "#64b783" },
-  { name: "Médio", value: dashboardKPIs.riskDistribution.medium, color: "#f59e0b" },
-  { name: "Alto", value: dashboardKPIs.riskDistribution.high, color: "#f97316" },
-  { name: "Crítico", value: dashboardKPIs.riskDistribution.critical, color: "#ef4444" },
-];
+interface RiskDistribution {
+  low: number;
+  medium: number;
+  high: number;
+  critical: number;
+}
 
-const total = Object.values(dashboardKPIs.riskDistribution).reduce((a, b) => a + b, 0);
+interface Props {
+  data: RiskDistribution;
+}
 
-export function RiskDistributionDonut() {
+export function RiskDistributionDonut({ data }: Props) {
+  const RISK_DATA = [
+    { name: "Baixo", value: data.low, color: "#64b783" },
+    { name: "Médio", value: data.medium, color: "#f59e0b" },
+    { name: "Alto", value: data.high, color: "#f97316" },
+    { name: "Crítico", value: data.critical, color: "#ef4444" },
+  ];
+
+  const total = Object.values(data).reduce((a, b) => a + b, 0);
+
   return (
     <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-100">
       <h3 className="font-semibold text-slate-800 mb-4">Distribuição de Risco</h3>

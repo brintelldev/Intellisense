@@ -1,11 +1,13 @@
 import { useState, useMemo } from "react";
+import { useLocation } from "wouter";
 import { DataTable, ColumnDef } from "../../../shared/components/DataTable";
 import { ScoreBadge } from "../../../shared/components/ScoreBadge";
 import { Progress } from "../../../shared/components/ui/progress";
 import { LeadFilters } from "../components/LeadFilters";
 import { LeadDetailDrawer } from "../components/LeadDetailDrawer";
+import { EmptyState } from "../../../shared/components/EmptyState";
+import { LoadingState } from "../../../shared/components/LoadingState";
 import { Lead, ScoreTier, LeadStatus } from "../../../data/types";
-import { leads as mockLeads } from "../../../data/obtain-leads";
 import { useObtainLeads } from "../../../shared/hooks/useObtain";
 
 interface Filters {
@@ -94,6 +96,7 @@ const COLUMNS: ColumnDef<Lead>[] = [
 export default function ObtainLeadsPage() {
   const [filters, setFilters] = useState<Filters>({ search: "", scoreTier: "all", status: "all", source: "all", icpCluster: "all", minScore: 0 });
   const [selected, setSelected] = useState<Lead | null>(null);
+  const [, navigate] = useLocation();
 
   const { data: apiLeadsData, isLoading } = useObtainLeads({
     scoreTier: filters.scoreTier !== "all" ? filters.scoreTier : undefined,
@@ -102,7 +105,9 @@ export default function ObtainLeadsPage() {
     search: filters.search || undefined,
   });
 
-  const leads = apiLeadsData?.data ?? mockLeads;
+  if (isLoading) return <LoadingState rows={8} />;
+
+  const leads = apiLeadsData?.data ?? [];
 
   const filtered = useMemo(() => {
     return leads.filter((l: Lead) => {
@@ -119,6 +124,15 @@ export default function ObtainLeadsPage() {
     });
   }, [filters, leads]);
 
+  if (filtered.length === 0 && !filters.search && filters.scoreTier === "all" && filters.status === "all" && filters.source === "all") {
+    return (
+      <EmptyState
+        title="Nenhum lead encontrado"
+        description="Importe dados de leads para começar a qualificar oportunidades."
+        action={{ label: "Importar dados", onClick: () => navigate("/obtain/upload") }}
+      />
+    );
+  }
 
   return (
     <div className="space-y-4 w-full">

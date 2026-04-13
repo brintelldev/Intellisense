@@ -1,30 +1,39 @@
 import { useLocation } from "wouter";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, ResponsiveContainer } from "recharts";
-import { dashboardKPIs as mockRetainKPIs } from "../../data/retain-analytics";
-import { obtainDashboardKPIs as mockObtainKPIs, leadQualityTrend } from "../../data/obtain-campaigns";
 import { useRetainDashboard } from "../../shared/hooks/useRetain";
-import { useObtainDashboard } from "../../shared/hooks/useObtain";
+import { useObtainDashboard, useLeadQualityTrend } from "../../shared/hooks/useObtain";
 import { LoadingState } from "../../shared/components/LoadingState";
+import { EmptyState } from "../../shared/components/EmptyState";
 import { fmtBRLShort as fmtBRL } from "../../shared/lib/format";
 
-const sourcePerformance = [
-  { source: "Indicação", ltv: 890 },
-  { source: "Feira", ltv: 720 },
-  { source: "LinkedIn", ltv: 540 },
-  { source: "Google Ads", ltv: 180 },
-  { source: "Outbound", ltv: 150 },
-];
+const EMPTY_SOURCE_PERF: { source: string; ltv: number }[] = [];
 
 export default function LifecyclePage() {
   const [, navigate] = useLocation();
 
   const { data: retainDashData, isLoading: loadingRetain } = useRetainDashboard();
   const { data: obtainDashData, isLoading: loadingObtain } = useObtainDashboard();
+  const { data: qualityTrend } = useLeadQualityTrend();
 
-  const dashboardKPIs = retainDashData?.kpis ?? mockRetainKPIs;
-  const obtainDashboardKPIs = obtainDashData?.kpis ?? mockObtainKPIs;
+  const dashboardKPIs = retainDashData?.kpis;
+  const obtainDashboardKPIs = obtainDashData?.kpis;
 
   if (loadingRetain || loadingObtain) return <LoadingState rows={8} />;
+
+  if (!dashboardKPIs && !obtainDashboardKPIs) {
+    return (
+      <div className="space-y-6 w-full">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Ciclo de Vida do Cliente</h1>
+          <p className="text-sm text-slate-500 mt-1">Visão integrada de aquisição e retenção</p>
+        </div>
+        <EmptyState
+          title="Sem dados ainda"
+          description="Faça o primeiro upload de clientes (Retain) ou leads (Obtain) para ver o ciclo de vida integrado."
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 w-full">
@@ -45,19 +54,19 @@ export default function LifecyclePage() {
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-slate-50 rounded-lg p-3">
               <p className="text-xs text-slate-500">Leads no Funil</p>
-              <p className="text-xl font-bold text-slate-900">{obtainDashboardKPIs.totalLeads}</p>
+              <p className="text-xl font-bold text-slate-900">{obtainDashboardKPIs?.totalLeads ?? 0}</p>
             </div>
             <div className="bg-slate-50 rounded-lg p-3">
               <p className="text-xs text-slate-500">Leads Hot</p>
-              <p className="text-xl font-bold text-[#10B981]">{obtainDashboardKPIs.hotLeads}</p>
+              <p className="text-xl font-bold text-[#10B981]">{obtainDashboardKPIs?.hotLeads ?? 0}</p>
             </div>
             <div className="bg-slate-50 rounded-lg p-3">
               <p className="text-xs text-slate-500">CAC Médio</p>
-              <p className="text-xl font-bold text-slate-900">{fmtBRL(obtainDashboardKPIs.cac)}</p>
+              <p className="text-xl font-bold text-slate-900">{fmtBRL(obtainDashboardKPIs?.cac ?? 0)}</p>
             </div>
             <div className="bg-slate-50 rounded-lg p-3">
               <p className="text-xs text-slate-500">Tx. Conversão</p>
-              <p className="text-xl font-bold text-slate-900">{(obtainDashboardKPIs.conversionRate * 100).toFixed(0)}%</p>
+              <p className="text-xl font-bold text-slate-900">{((obtainDashboardKPIs?.conversionRate ?? 0) * 100).toFixed(0)}%</p>
             </div>
           </div>
           <button
@@ -70,12 +79,12 @@ export default function LifecyclePage() {
 
         {/* Transition block */}
         <div className="bg-gradient-to-br from-[#293b83] to-[#67b4b0] rounded-xl p-6 py-8 text-white flex flex-col items-center justify-center text-center min-h-[200px]">
-          <div className="text-4xl md:text-5xl font-bold tabular-nums">12</div>
-          <p className="text-sm mt-2 text-white/90">novos clientes convertidos este mês</p>
+          <div className="text-4xl md:text-5xl font-bold tabular-nums">{obtainDashboardKPIs?.totalLeads ?? 0}</div>
+          <p className="text-sm mt-2 text-white/90">leads no funil de aquisição</p>
           <div className="flex items-center gap-2 mt-4">
             <span className="text-xs bg-white/20 px-2 py-1 rounded">LTV médio previsto</span>
           </div>
-          <div className="text-lg font-semibold mt-1">R$ 540K</div>
+          <div className="text-lg font-semibold mt-1">{fmtBRL(obtainDashboardKPIs?.avgLtv ?? 0)}</div>
           <div className="flex items-center gap-2 mt-4 text-white/80">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
@@ -93,19 +102,19 @@ export default function LifecyclePage() {
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-slate-50 rounded-lg p-3">
               <p className="text-xs text-slate-500">Clientes Ativos</p>
-              <p className="text-xl font-bold text-slate-900">{dashboardKPIs.totalCustomers}</p>
+              <p className="text-xl font-bold text-slate-900">{dashboardKPIs?.totalCustomers ?? 0}</p>
             </div>
             <div className="bg-slate-50 rounded-lg p-3">
               <p className="text-xs text-slate-500">Em Risco</p>
-              <p className="text-xl font-bold text-red-500">{dashboardKPIs.riskDistribution.high + dashboardKPIs.riskDistribution.critical}</p>
+              <p className="text-xl font-bold text-red-500">{(dashboardKPIs?.riskDistribution?.high ?? 0) + (dashboardKPIs?.riskDistribution?.critical ?? 0)}</p>
             </div>
             <div className="bg-slate-50 rounded-lg p-3">
               <p className="text-xs text-slate-500">Churn Rate</p>
-              <p className="text-xl font-bold text-slate-900">{dashboardKPIs.churnRate}%</p>
+              <p className="text-xl font-bold text-slate-900">{dashboardKPIs?.churnRate ?? 0}%</p>
             </div>
             <div className="bg-slate-50 rounded-lg p-3">
               <p className="text-xs text-slate-500">Receita em Risco</p>
-              <p className="text-xl font-bold text-orange-500">{fmtBRL(dashboardKPIs.revenueAtRisk)}</p>
+              <p className="text-xl font-bold text-orange-500">{fmtBRL(dashboardKPIs?.revenueAtRisk ?? 0)}</p>
             </div>
           </div>
           <button
@@ -144,7 +153,7 @@ export default function LifecyclePage() {
         <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-100">
           <h3 className="font-semibold text-slate-800 mb-4">Qualidade da Aquisição ao Longo do Tempo</h3>
           <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={leadQualityTrend}>
+            <AreaChart data={qualityTrend ?? []}>
               <defs>
                 <linearGradient id="hotGrad" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#10B981" stopOpacity={0.3}/>
@@ -165,7 +174,7 @@ export default function LifecyclePage() {
         <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-100">
           <h3 className="font-semibold text-slate-800 mb-4">Origem dos Melhores Clientes (LTV Médio)</h3>
           <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={sourcePerformance} layout="vertical">
+            <BarChart data={EMPTY_SOURCE_PERF} layout="vertical">
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
               <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v) => `R$${v}K`} />
               <YAxis dataKey="source" type="category" tick={{ fontSize: 10 }} width={72} />

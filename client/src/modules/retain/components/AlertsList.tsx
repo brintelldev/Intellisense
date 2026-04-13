@@ -1,5 +1,13 @@
 import { useLocation } from "wouter";
-import { alerts } from "../../../data/retain-alerts";
+
+interface Alert {
+  id: string;
+  customerId: string;
+  customerName: string;
+  message: string;
+  severity: "critical" | "high" | "medium";
+  timeAgo: string;
+}
 
 const SEVERITY_CONFIG = {
   critical: { dot: "bg-red-500", bg: "bg-red-50" },
@@ -7,8 +15,22 @@ const SEVERITY_CONFIG = {
   medium: { dot: "bg-amber-400", bg: "bg-amber-50" },
 };
 
-export function AlertsList() {
+interface Props {
+  alerts: Alert[];
+}
+
+export function AlertsList({ alerts }: Props) {
   const [, navigate] = useLocation();
+
+  if (alerts.length === 0) {
+    return (
+      <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-100">
+        <h3 className="font-semibold text-slate-800 mb-4">Alertas Recentes</h3>
+        <p className="text-sm text-slate-500">Nenhum alerta</p>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-100">
       <div className="flex items-center justify-between mb-4">

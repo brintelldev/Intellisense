@@ -1,8 +1,23 @@
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { monthlyAnalytics } from "../../../data/retain-analytics";
 
-export function ChurnTrendChart() {
-  const data = monthlyAnalytics.map(m => ({ month: m.month, churn: m.churnRate }));
+interface ChurnTrendDataPoint {
+  month: string;
+  churn: number;
+}
+
+interface Props {
+  data: ChurnTrendDataPoint[];
+}
+
+export function ChurnTrendChart({ data }: Props) {
+  if (data.length === 0) {
+    return (
+      <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-100">
+        <h3 className="font-semibold text-slate-800 mb-4">Tendência de Churn — Últimos 12 Meses</h3>
+        <p className="text-sm text-slate-500">Sem dados</p>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-100">

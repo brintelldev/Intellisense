@@ -1,0 +1,21 @@
+nome_contato,empresa,segmento,porte,cidade,uf,email_comercial,telefone,origem,campanha_origem
+Roberto Almeida,Construtora Horizonte SA,Construção Civil,large,Goiânia,GO,roberto@horizonte.com.br,62991234567,referral,Indicação Direta
+Fernanda Lima,Engenharia Delta Ltda,Construção Civil,medium,Brasília,DF,fernanda@delta.eng.br,61998765432,event,Expo Construção 2026
+Carlos Mendes,Terraplanagem Tocantins,Infraestrutura,small,Palmas,TO,carlos@terratoc.com.br,63997654321,outbound,Prospecção Ativa
+Ana Beatriz Costa,Pavimentação Centro-Oeste,Infraestrutura,medium,Uberlândia,MG,ana@pavco.com.br,34996543210,paid_search,Google Ads Mar
+Paulo Ricardo,Construtora Imperial SA,Construção Civil,enterprise,São Paulo,SP,paulo@imperial.com.br,11995432109,referral,Indicação Direta
+Mariana Souza,Obras e Reformas Express,Construção Civil,micro,Goiânia,GO,mariana@express.com.br,62994321098,paid_social,LinkedIn Ads
+Diego Ferreira,Concreteira Planalto,Construção Civil,medium,Anápolis,GO,diego@concplanalto.com.br,62993210987,organic,
+Juliana Rocha,Estrutural Engenharia Ltda,Construção Civil,large,Belo Horizonte,MG,juliana@estrutural.eng.br,31992109876,event,Expo Construção 2026
+Thiago Santos,Drenagem e Saneamento GO,Infraestrutura,small,Aparecida de Goiânia,GO,thiago@drenago.com.br,62991098765,outbound,Prospecção Ativa
+Luciana Martins,Incorporadora Novo Horizonte,Construção Civil,large,Cuiabá,MT,luciana@novohorizonte.com.br,65990987654,referral,Indicação Direta
+Marcos Oliveira,Alvenaria Total ME,Construção Civil,micro,Rio Verde,GO,marcos@alvenaria.com.br,64989876543,paid_social,LinkedIn Ads
+Camila Araújo,Geotecnia Cerrado Ltda,Infraestrutura,medium,Goiânia,GO,camila@geocerrado.com.br,62988765432,organic,
+Felipe Nunes,Construtora Araguaia SA,Construção Civil,large,Goiânia,GO,felipe@araguaia.com.br,62987654321,event,Expo Construção 2026
+Patrícia Vieira,Elétrica e Hidráulica Central,Construção Civil,small,Catalão,GO,patricia@ehcentral.com.br,64986543210,outbound,Prospecção Ativa
+Ricardo Barbosa,Fundações Profundas Ltda,Construção Civil,medium,Brasília,DF,ricardo@fundacoes.com.br,61985432109,referral,Indicação Direta
+Sandra Pereira,Demolição Rápida GO,Construção Civil,micro,Goiânia,GO,sandra@demolrapida.com.br,62984321098,paid_search,Google Ads Mar
+Gabriel Teixeira,MegaObras Engenharia SA,Construção Civil,enterprise,São Paulo,SP,gabriel@megaobras.com.br,11983210987,referral,Indicação Direta
+Renata Castro,Paisagismo e Urbanismo Ltda,Construção Civil,small,Goiânia,GO,renata@paisurb.com.br,62982109876,organic,
+Henrique Dias,Transportes e Terraplanagem HB,Infraestrutura,medium,Itumbiara,GO,henrique@thb.com.br,64981098765,event,Expo Construção 2026
+Amanda Lopes,Construtora Ipê Amarelo,Construção Civil,small,Jataí,GO,amanda@ipeamarelo.com.br,64980987654,paid_social,LinkedIn Ads

@@ -99,6 +99,85 @@ export function useUploadRetainCSV() {
       }
       return res.json();
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["retain", "uploads"] }); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["retain"] }); },
+  });
+}
+
+// ─── Alerts ─────────────────────────────────────────────────────────────────
+export function useRetainAlerts(params: { severity?: string; isRead?: string } = {}) {
+  return useQuery({
+    queryKey: ["retain", "alerts", params],
+    queryFn: () => api.get<any[]>(`/retain/alerts${qs(params)}`),
+    staleTime: 30_000,
+  });
+}
+
+export function useMarkRetainAlertRead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.patch(`/retain/alerts/${id}/read`, {}),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["retain", "alerts"] }); },
+  });
+}
+
+// ─── Data Freshness ─────────────────────────────────────────────────────────
+export function useRetainDataFreshness() {
+  return useQuery({
+    queryKey: ["retain", "data-freshness"],
+    queryFn: () => api.get<{ lastUploadAt: string | null; lastUploadFilename: string | null; totalRecords: number }>("/retain/data-freshness"),
+    staleTime: 60_000,
+  });
+}
+
+// ─── Revenue by Segment ─────────────────────────────────────────────────────
+export function useRetainRevenueBySegment() {
+  return useQuery({
+    queryKey: ["retain", "revenue-by-segment"],
+    queryFn: () => api.get<any[]>("/retain/revenue-by-segment"),
+    staleTime: 60_000,
+  });
+}
+
+// ─── Customer Score History ─────────────────────────────────────────────────
+export function useCustomerScoreHistory(customerId: string | null) {
+  return useQuery({
+    queryKey: ["retain", "score-history", customerId],
+    queryFn: () => api.get<any[]>(`/retain/customers/${customerId}/score-history`),
+    enabled: !!customerId,
+  });
+}
+
+// ─── Customer Notes ─────────────────────────────────────────────────────────
+export function useCustomerNotes(customerId: string | null) {
+  return useQuery({
+    queryKey: ["retain", "notes", customerId],
+    queryFn: () => api.get<any[]>(`/retain/customers/${customerId}/notes`),
+    enabled: !!customerId,
+  });
+}
+
+export function useAddCustomerNote() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ customerId, type, content }: { customerId: string; type: string; content: string }) =>
+      api.post(`/retain/customers/${customerId}/notes`, { type, content }),
+    onSuccess: (_, vars) => { qc.invalidateQueries({ queryKey: ["retain", "notes", vars.customerId] }); },
+  });
+}
+
+// ─── Mark Customer as Churned ───────────────────────────────────────────────
+export function useMarkCustomerChurned() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (customerId: string) => api.post(`/retain/customers/${customerId}/churn`, {}),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["retain"] }); },
+  });
+}
+
+// ─── Suggest Mapping ────────────────────────────────────────────────────────
+export function useSuggestRetainMapping() {
+  return useMutation({
+    mutationFn: (data: { headers: string[]; sampleRows: Record<string, string>[] }) =>
+      api.post<any[]>("/retain/upload/suggest-mapping", data),
   });
 }

@@ -1,11 +1,13 @@
 import { useState, useMemo } from "react";
+import { useLocation } from "wouter";
 import { DataTable, ColumnDef } from "../../../shared/components/DataTable";
 import { RiskBadge } from "../../../shared/components/RiskBadge";
 import { Progress } from "../../../shared/components/ui/progress";
 import { Input } from "../../../shared/components/ui/input";
 import { Select } from "../../../shared/components/ui/select";
+import { EmptyState } from "../../../shared/components/EmptyState";
+import { LoadingState } from "../../../shared/components/LoadingState";
 import { useRetainCustomers } from "../../../shared/hooks/useRetain";
-import { customers as mockCustomers } from "../../../data/retain-customers";
 import { Customer, RiskLevel, CustomerStatus } from "../../../data/types";
 
 const SEGMENTS = ["Mineração", "Construção Civil", "Agropecuária", "Industrial"];
@@ -79,6 +81,7 @@ export default function RetainCustomersPage() {
   const [revenueMin, setRevenueMin] = useState("");
   const [revenueMax, setRevenueMax] = useState("");
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
+  const [, navigate] = useLocation();
 
   const { data: apiData, isLoading } = useRetainCustomers({
     search: search || undefined,
@@ -86,29 +89,31 @@ export default function RetainCustomersPage() {
     segment: segment !== "all" ? segment : undefined,
   });
 
-  const customers = apiData?.data ?? mockCustomers;
+  if (isLoading) return <LoadingState rows={8} />;
+
+  const customers = apiData?.data ?? [];
 
   const filtered = useMemo(() => {
     const minRev = revenueMin ? Number(revenueMin.replace(/\D/g, "")) : null;
     const maxRev = revenueMax ? Number(revenueMax.replace(/\D/g, "")) : null;
 
-    if (apiData?.data) return apiData.data.filter((c: any) => {
-      if (status !== "all" && c.status !== status) return false;
-      if (minRev && c.revenue < minRev) return false;
-      if (maxRev && c.revenue > maxRev) return false;
-      return true;
-    });
     return customers.filter((c: any) => {
-      if (search && !c.name.toLowerCase().includes(search.toLowerCase())) return false;
-      if (riskLevel !== "all" && c.riskLevel !== riskLevel) return false;
-      if (segment !== "all" && c.segment !== segment) return false;
       if (status !== "all" && c.status !== status) return false;
       if (minRev && c.revenue < minRev) return false;
       if (maxRev && c.revenue > maxRev) return false;
       return true;
     });
-  }, [search, riskLevel, segment, status, revenueMin, revenueMax, apiData, customers]);
+  }, [status, revenueMin, revenueMax, customers]);
 
+  if (filtered.length === 0 && !search && riskLevel === "all" && segment === "all" && status === "all") {
+    return (
+      <EmptyState
+        title="Nenhuma empresa encontrada"
+        description="Importe dados de clientes para começar a monitorar a base."
+        action={{ label: "Importar dados", onClick: () => navigate("/retain/upload") }}
+      />
+    );
+  }
 
   return (
     <div className="space-y-5 w-full">

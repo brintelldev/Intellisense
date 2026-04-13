@@ -1,6 +1,8 @@
+import { useLocation } from "wouter";
 import { RefreshCcw } from "lucide-react";
 import { QuadrantMatrix } from "../../../shared/components/QuadrantMatrix";
-import { campaigns as mockCampaigns } from "../../../data/obtain-campaigns";
+import { EmptyState } from "../../../shared/components/EmptyState";
+import { LoadingState } from "../../../shared/components/LoadingState";
 import { useObtainCampaigns } from "../../../shared/hooks/useObtain";
 
 import { fmtBRLShort as fmtBRL } from "../../../shared/lib/format";
@@ -22,7 +24,21 @@ const CHANNEL_COLORS: Record<string, string> = {
 
 export default function ObtainCACLTVPage() {
   const { data: apiCampaigns, isLoading } = useObtainCampaigns();
-  const campaigns = apiCampaigns ?? mockCampaigns;
+  const [, navigate] = useLocation();
+
+  if (isLoading) return <LoadingState rows={6} />;
+
+  const campaigns = apiCampaigns ?? [];
+
+  if (campaigns.length === 0) {
+    return (
+      <EmptyState
+        title="Nenhuma campanha encontrada"
+        description="Importe dados de campanhas para analisar a eficiência de canais."
+        action={{ label: "Importar dados", onClick: () => navigate("/obtain/upload") }}
+      />
+    );
+  }
 
   const POINTS = campaigns.map((c: any) => ({
     x: c.cac / 1000,
@@ -31,7 +47,6 @@ export default function ObtainCACLTVPage() {
     color: CHANNEL_COLORS[c.channel] ?? "#64748b",
     size: 14 + Math.sqrt(c.totalLeads),
   }));
-
 
   return (
     <div className="space-y-6 w-full">

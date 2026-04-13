@@ -1,11 +1,17 @@
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
-import { icpClusters } from "../../../data/obtain-icp-clusters";
+import { ICPCluster } from "../../../data/types";
+
+interface Props {
+  clusters: ICPCluster[];
+}
 
 const COLORS = ["#10B981", "#293b83", "#ef4444"];
-const totalLeads = icpClusters.reduce((a, c) => a + c.leadsInFunnel, 0);
 
-export function ICPDistributionDonut() {
-  const data = icpClusters.map(c => ({ name: c.name, value: c.leadsInFunnel }));
+export function ICPDistributionDonut({ clusters }: Props) {
+  if (clusters.length === 0) return null;
+
+  const data = clusters.map(c => ({ name: c.name, value: c.leadsInFunnel }));
+  const totalLeads = clusters.reduce((a, c) => a + c.leadsInFunnel, 0);
 
   return (
     <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-100">
@@ -25,7 +31,7 @@ export function ICPDistributionDonut() {
         </div>
       </div>
       <div className="space-y-1.5 mt-2">
-        {icpClusters.map((c, i) => (
+        {clusters.map((c, i) => (
           <div key={c.id} className="flex items-center gap-2">
             <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: COLORS[i] }} />
             <span className="text-xs text-slate-600 truncate">{c.name}</span>

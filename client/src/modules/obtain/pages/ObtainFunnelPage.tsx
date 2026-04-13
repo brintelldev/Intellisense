@@ -1,14 +1,30 @@
+import { useLocation } from "wouter";
 import { FunnelChart } from "../../../shared/components/FunnelChart";
 import { FunnelAlertCards } from "../components/FunnelAlertCards";
-import { funnelStages as mockFunnelStages } from "../../../data/obtain-funnel";
-import { useObtainFunnel } from "../../../shared/hooks/useObtain";
+import { EmptyState } from "../../../shared/components/EmptyState";
+import { LoadingState } from "../../../shared/components/LoadingState";
+import { useObtainFunnel, useObtainAlerts } from "../../../shared/hooks/useObtain";
 
 import { fmtBRLShort as fmtBRL } from "../../../shared/lib/format";
 
 export default function ObtainFunnelPage() {
   const { data: apiFunnel, isLoading } = useObtainFunnel();
-  const funnelStages = apiFunnel ?? mockFunnelStages;
+  const { data: apiFunnelAlerts } = useObtainAlerts();
+  const [, navigate] = useLocation();
 
+  if (isLoading) return <LoadingState rows={6} />;
+
+  const funnelStages = apiFunnel ?? [];
+
+  if (funnelStages.length === 0) {
+    return (
+      <EmptyState
+        title="Nenhum dado de funil encontrado"
+        description="Importe dados de leads para visualizar o funil de vendas."
+        action={{ label: "Importar dados", onClick: () => navigate("/obtain/upload") }}
+      />
+    );
+  }
 
   const totalRevenue = funnelStages.reduce((a: number, s: any) => a + s.revenueAtRisk, 0);
   const totalHotStuck = funnelStages.reduce((a: number, s: any) => a + s.hotLeadsStuck, 0);
@@ -96,7 +112,7 @@ export default function ObtainFunnelPage() {
       </div>
 
       {/* Alert cards */}
-      <FunnelAlertCards />
+      <FunnelAlertCards alerts={apiFunnelAlerts ?? []} />
     </div>
   );
 }

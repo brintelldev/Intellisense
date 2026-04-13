@@ -1,13 +1,22 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
+import fs from "fs";
+import path from "path";
+import Papa from "papaparse";
 import { db } from "../db.js";
 import { eq, sql } from "drizzle-orm";
 import {
   tenants, users, customers, retainPredictions, retainChurnCauses,
   retainAnalytics, retainUploads, obtainCampaigns, leads, obtainScores,
   obtainIcpClusters, obtainCampaignRoi, obtainFunnelMetrics, obtainUploads,
-  obtainLeadActions, retainActions,
+  obtainLeadActions, retainActions, retainAlerts, customerScoreHistory,
+  obtainAlerts, leadScoreHistory, customerNotes, scoringConfigs,
+  customDimensions, columnMappingTemplates,
 } from "../../../shared/schema.js";
+import { runRetainPredictions, generateAnalyticsSnapshot, generateChurnCauses, generateAlerts } from "../engine/retain-scoring.js";
+import { runObtainScoring, generateObtainAlerts } from "../engine/obtain-scoring.js";
+import { generateIcpClusters } from "../engine/icp-clustering.js";
+import { suggestMapping } from "../engine/column-mapper.js";
 
 export const seedRouter = Router();
 
@@ -405,5 +414,203 @@ seedRouter.post("/dcco", async (_req, res) => {
   } catch (err) {
     console.error("Seed error:", err);
     res.status(500).json({ error: "Erro ao executar seed", details: String(err) });
+  }
+});
+
+// ─── POST /api/seed/demo — Pipeline-based seed ─────────────────────────────
+// Uses the same intelligence engines that real uploads use.
+seedRouter.post("/demo", async (_req, res) => {
+  try {
+    // ── Cleanup existing demo tenant ─────────────────────────────────────
+    const existingTenants = await db.select({ id: tenants.id }).from(tenants)
+      .where(eq(tenants.companyName, "DCCO Equipamentos"));
+
+    for (const existing of existingTenants) {
+      const tid = existing.id;
+      const tables = [
+        "customer_notes", "customer_score_history", "retain_alerts",
+        "obtain_alerts", "lead_score_history",
+        "obtain_lead_actions", "obtain_scores", "obtain_campaign_roi",
+        "obtain_funnel_metrics", "obtain_uploads", "leads",
+        "obtain_icp_clusters", "obtain_campaigns",
+        "retain_actions", "retain_predictions", "retain_churn_causes",
+        "retain_analytics", "retain_uploads", "customers",
+        "scoring_configs", "custom_dimensions", "column_mapping_templates",
+      ];
+      for (const table of tables) {
+        await db.execute(sql.raw(`DELETE FROM ${table} WHERE tenant_id = '${tid}'`));
+      }
+      await db.execute(sql`DELETE FROM users WHERE tenant_id = ${tid}`);
+      await db.execute(sql`DELETE FROM tenants WHERE id = ${tid}`);
+    }
+    await db.execute(sql`DELETE FROM users WHERE email = 'demo@dcco.com.br'`);
+
+    // ── 1. Create tenant ────────────────────────────────────────────────
+    const [tenant] = await db.insert(tenants).values({
+      companyName: "DCCO Equipamentos",
+      sector: "industrial_b2b",
+      sectorConfig: {
+        customerLabel: "Empresa",
+        customersLabel: "Empresas",
+        revenueLabel: "Valor do Contrato",
+        engagementLabel: "Utilização de Equipamentos",
+        ticketLabel: "Chamados Técnicos",
+        tenureLabel: "Tempo de Parceria",
+        segments: ["Mineração", "Construção Civil", "Agropecuária", "Industrial"],
+        currency: "BRL",
+      },
+      plan: "enterprise",
+    }).returning();
+    const tenantId = tenant.id;
+
+    // ── 2. Create admin user ────────────────────────────────────────────
+    const passwordHash = await bcrypt.hash("Demo@2026", 12);
+    await db.insert(users).values({
+      tenantId,
+      email: "demo@dcco.com.br",
+      passwordHash,
+      name: "Admin DCCO",
+      role: "admin",
+    });
+
+    // ── 3. Parse and insert customers from CSV ──────────────────────────
+    const csvDir = path.join(import.meta.dirname ?? __dirname, "../seed/csv-templates");
+    const customerCsvPath = path.join(csvDir, "mineracao_clientes.csv");
+    const customerCsv = fs.readFileSync(customerCsvPath, "utf-8");
+    const parsedCustomers = Papa.parse<Record<string, string>>(customerCsv, { header: true, skipEmptyLines: true });
+
+    // Auto-detect mapping
+    const customerHeaders = parsedCustomers.meta.fields ?? [];
+    const customerMapping = suggestMapping(customerHeaders, parsedCustomers.data.slice(0, 3), "retain");
+    const retainMap: Record<string, string> = {};
+    for (const suggestion of customerMapping) {
+      if (suggestion.suggestedDimension && suggestion.confidenceScore > 0.3) {
+        retainMap[suggestion.suggestedDimension] = suggestion.csvColumn;
+      }
+    }
+
+    // Manual overrides for known columns specific to this CSV
+    retainMap["customerCode"] = "codigo";
+    retainMap["name"] = "razao_social";
+    retainMap["segment"] = "segmento";
+
+    const toFloat = (v: string | undefined) => v ? parseFloat(v.replace(",", ".")) || null : null;
+    const toInt = (v: string | undefined) => v ? parseInt(v, 10) || null : null;
+
+    // Simulate 3 monthly uploads for trend data
+    for (let monthOffset = 2; monthOffset >= 0; monthOffset--) {
+      for (const row of parsedCustomers.data) {
+        const get = (key: string) => {
+          const col = retainMap[key];
+          return col ? row[col] : undefined;
+        };
+
+        // Add variation to simulate change over months
+        const variation = monthOffset === 0 ? 1 : monthOffset === 1 ? 0.95 + Math.random() * 0.1 : 0.9 + Math.random() * 0.2;
+        const code = get("customerCode") ?? "";
+
+        const existingRows = await db.select({ id: customers.id })
+          .from(customers)
+          .where(sql`${customers.tenantId} = ${tenantId} AND ${customers.customerCode} = ${code}`)
+          .limit(1);
+
+        const customerData = {
+          tenantId,
+          customerCode: code,
+          name: get("name") ?? "Sem nome",
+          segment: get("segment") ?? undefined,
+          dimRevenue: toFloat(get("dimRevenue")),
+          dimPaymentRegularity: toFloat(get("dimPaymentRegularity")),
+          dimTenureDays: toInt(get("dimTenureDays")),
+          dimInteractionFrequency: toFloat(get("dimInteractionFrequency")),
+          dimSupportVolume: toFloat(get("dimSupportVolume")),
+          dimSatisfaction: toFloat(get("dimSatisfaction")),
+          dimContractRemainingDays: toInt(get("dimContractRemainingDays")),
+          dimUsageIntensity: toFloat(get("dimUsageIntensity")),
+          dimRecencyDays: toInt(get("dimRecencyDays")),
+          rawData: row,
+          updatedAt: new Date(),
+        };
+
+        // Apply variation to simulate trends
+        if (monthOffset > 0 && customerData.dimSatisfaction != null) {
+          customerData.dimSatisfaction = Math.round(customerData.dimSatisfaction * variation);
+        }
+        if (monthOffset > 0 && customerData.dimUsageIntensity != null) {
+          customerData.dimUsageIntensity = Math.round(customerData.dimUsageIntensity * variation);
+        }
+
+        if (existingRows.length > 0) {
+          await db.update(customers).set(customerData).where(eq(customers.id, existingRows[0].id));
+        } else {
+          await db.insert(customers).values({ ...customerData, status: "active" as const });
+        }
+      }
+
+      // Run full pipeline after each "upload"
+      await runRetainPredictions(tenantId);
+      await generateAnalyticsSnapshot(tenantId);
+      await generateChurnCauses(tenantId);
+    }
+
+    // Generate alerts only on the final run
+    await generateAlerts(tenantId);
+
+    // ── 4. Parse and insert leads from CSV ──────────────────────────────
+    const leadCsvPath = path.join(csvDir, "construcao_leads.csv");
+    const leadCsv = fs.readFileSync(leadCsvPath, "utf-8");
+    const parsedLeads = Papa.parse<Record<string, string>>(leadCsv, { header: true, skipEmptyLines: true });
+
+    for (const row of parsedLeads.data) {
+      await db.insert(leads).values({
+        tenantId,
+        name: row["nome_contato"] ?? "Sem nome",
+        company: row["empresa"] ?? undefined,
+        industry: row["segmento"] ?? undefined,
+        companySize: (["micro", "small", "medium", "large", "enterprise"].includes(row["porte"] ?? "")
+          ? row["porte"] as any : undefined),
+        city: row["cidade"] ?? undefined,
+        state: row["uf"] ?? undefined,
+        email: row["email_comercial"] ?? undefined,
+        phone: row["telefone"] ?? undefined,
+        source: (["referral", "event", "outbound", "paid_search", "paid_social", "organic"].includes(row["origem"] ?? "")
+          ? row["origem"] as any : "csv"),
+        status: "new",
+        rawData: row,
+      });
+    }
+
+    // Run Obtain pipeline
+    await runObtainScoring(tenantId);
+    await generateIcpClusters(tenantId);
+    await generateObtainAlerts(tenantId);
+
+    // ── 5. Count results ────────────────────────────────────────────────
+    const [cCount] = await db.select({ c: sql<number>`count(*)::int` }).from(customers).where(eq(customers.tenantId, tenantId));
+    const [pCount] = await db.select({ c: sql<number>`count(*)::int` }).from(retainPredictions).where(eq(retainPredictions.tenantId, tenantId));
+    const [aCount] = await db.select({ c: sql<number>`count(*)::int` }).from(retainAlerts).where(eq(retainAlerts.tenantId, tenantId));
+    const [lCount] = await db.select({ c: sql<number>`count(*)::int` }).from(leads).where(eq(leads.tenantId, tenantId));
+    const [sCount] = await db.select({ c: sql<number>`count(*)::int` }).from(obtainScores).where(eq(obtainScores.tenantId, tenantId));
+    const [iCount] = await db.select({ c: sql<number>`count(*)::int` }).from(obtainIcpClusters).where(eq(obtainIcpClusters.tenantId, tenantId));
+    const [hCount] = await db.select({ c: sql<number>`count(*)::int` }).from(customerScoreHistory).where(eq(customerScoreHistory.tenantId, tenantId));
+
+    res.json({
+      message: "Demo seed concluído via pipeline real",
+      email: "demo@dcco.com.br",
+      password: "Demo@2026",
+      tenantId,
+      stats: {
+        customers: cCount.c,
+        predictions: pCount.c,
+        alerts: aCount.c,
+        leads: lCount.c,
+        leadScores: sCount.c,
+        icpClusters: iCount.c,
+        scoreHistorySnapshots: hCount.c,
+      },
+    });
+  } catch (err) {
+    console.error("Demo seed error:", err);
+    res.status(500).json({ error: "Erro ao executar demo seed", details: String(err) });
   }
 });

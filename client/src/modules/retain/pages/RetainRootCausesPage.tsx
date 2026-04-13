@@ -1,7 +1,9 @@
+import { useLocation } from "wouter";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LineChart, Line, Legend } from "recharts";
 import { MetricCard } from "../../../shared/components/MetricCard";
+import { EmptyState } from "../../../shared/components/EmptyState";
+import { LoadingState } from "../../../shared/components/LoadingState";
 import { useRetainChurnCauses } from "../../../shared/hooks/useRetain";
-import { churnCauses as mockChurnCauses, churnCausesTrend } from "../../../data/retain-churn-causes";
 
 const CATEGORY_COLORS: Record<string, string> = {
   "Financeiro": "#ef4444",
@@ -19,8 +21,22 @@ import { fmtBRLShort as fmtBRL } from "../../../shared/lib/format";
 
 export default function RetainRootCausesPage() {
   const { data: apiCauses, isLoading } = useRetainChurnCauses();
+  const [, navigate] = useLocation();
 
-  const churnCauses = apiCauses ?? mockChurnCauses;
+  if (isLoading) return <LoadingState rows={6} />;
+
+  const churnCauses = apiCauses ?? [];
+
+  if (churnCauses.length === 0) {
+    return (
+      <EmptyState
+        title="Nenhuma causa raiz identificada"
+        description="Importe dados de clientes para que o modelo identifique as causas de churn."
+        action={{ label: "Importar dados", onClick: () => navigate("/retain/upload") }}
+      />
+    );
+  }
+
   const totalRevAtRisk = churnCauses.reduce((a, c) => a + c.revenueAtRisk, 0);
   const topCause = churnCauses[0];
 
@@ -116,23 +132,6 @@ export default function RetainRootCausesPage() {
             </BarChart>
           </ResponsiveContainer>
         </div>
-      </div>
-
-      {/* Trend chart */}
-      <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-100">
-        <h3 className="font-semibold text-slate-800 mb-4">Tendência Mensal por Categoria</h3>
-        <ResponsiveContainer width="100%" height={220}>
-          <LineChart data={churnCausesTrend}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-            <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${v}%`} />
-            <Tooltip formatter={(v: number) => [`${v}%`]} />
-            <Legend wrapperStyle={{ fontSize: 12 }} />
-            {TREND_KEYS.map((key, i) => (
-              <Line key={key} type="monotone" dataKey={key} stroke={TREND_COLORS[i]} strokeWidth={2} dot={{ r: 3 }} />
-            ))}
-          </LineChart>
-        </ResponsiveContainer>
       </div>
     </div>
   );

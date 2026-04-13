@@ -1,12 +1,24 @@
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import { leadQualityTrend } from "../../../data/obtain-campaigns";
 
-export function LeadQualityAreaChart() {
+interface LeadQualityPoint {
+  month: string;
+  hot: number;
+  warm: number;
+  cold: number;
+}
+
+interface Props {
+  data: LeadQualityPoint[];
+}
+
+export function LeadQualityAreaChart({ data }: Props) {
+  if (data.length === 0) return null;
+
   return (
     <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-100">
       <h3 className="font-semibold text-slate-800 mb-4">Qualidade dos Leads por Mês</h3>
       <ResponsiveContainer width="100%" height={220}>
-        <AreaChart data={leadQualityTrend}>
+        <AreaChart data={data}>
           <defs>
             <linearGradient id="hotGrad2" x1="0" y1="0" x2="0" y2="1">
               <stop offset="5%" stopColor="#10B981" stopOpacity={0.3} />

@@ -1,6 +1,8 @@
+import { useLocation } from "wouter";
 import { Download } from "lucide-react";
-import { icpClusters as mockICPClusters } from "../../../data/obtain-icp-clusters";
 import { ClusterRadarChart } from "../components/ClusterRadarChart";
+import { EmptyState } from "../../../shared/components/EmptyState";
+import { LoadingState } from "../../../shared/components/LoadingState";
 import { useObtainICPClusters } from "../../../shared/hooks/useObtain";
 
 const fmtBRL = (v: number) => v >= 1000000 ? `R$ ${(v / 1000000).toFixed(1)}M` : `R$ ${(v / 1000).toFixed(0)}K`;
@@ -13,8 +15,21 @@ const TYPE_CONFIG = {
 
 export default function ObtainICPPage() {
   const { data: apiClusters, isLoading } = useObtainICPClusters();
-  const icpClusters = apiClusters ?? mockICPClusters;
+  const [, navigate] = useLocation();
 
+  if (isLoading) return <LoadingState rows={6} />;
+
+  const icpClusters = apiClusters ?? [];
+
+  if (icpClusters.length === 0) {
+    return (
+      <EmptyState
+        title="Nenhum perfil de ICP encontrado"
+        description="Importe dados de leads para gerar os perfis de cliente ideal."
+        action={{ label: "Importar dados", onClick: () => navigate("/obtain/upload") }}
+      />
+    );
+  }
 
   return (
     <div className="space-y-6 w-full">

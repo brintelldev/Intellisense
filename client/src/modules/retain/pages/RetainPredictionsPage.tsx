@@ -1,11 +1,13 @@
 import { useState, useMemo } from "react";
+import { useLocation } from "wouter";
 import { DataTable, ColumnDef } from "../../../shared/components/DataTable";
 import { RiskBadge } from "../../../shared/components/RiskBadge";
 import { Progress } from "../../../shared/components/ui/progress";
 import { PredictionDetailDrawer } from "../components/PredictionDetailDrawer";
 import { PredictionFilters } from "../components/PredictionFilters";
+import { EmptyState } from "../../../shared/components/EmptyState";
+import { LoadingState } from "../../../shared/components/LoadingState";
 import { useRetainPredictions } from "../../../shared/hooks/useRetain";
-import { customers as mockCustomers } from "../../../data/retain-customers";
 import { Customer, RiskLevel } from "../../../data/types";
 
 const SEGMENTS = ["Mineração", "Construção Civil", "Agropecuária", "Industrial"];
@@ -110,6 +112,7 @@ const columns: ColumnDef<Customer>[] = [
 export default function RetainPredictionsPage() {
   const [selected, setSelected] = useState<Customer | null>(null);
   const [filters, setFilters] = useState({ search: "", riskLevel: "all" as RiskLevel | "all", segment: "all", status: "all" as "active" | "at_risk" | "churned" | "all" });
+  const [, navigate] = useLocation();
 
   const { data: apiData, isLoading } = useRetainPredictions({
     search: filters.search || undefined,
@@ -117,20 +120,24 @@ export default function RetainPredictionsPage() {
     segment: filters.segment !== "all" ? filters.segment : undefined,
   });
 
-  const customers = apiData?.data ?? mockCustomers;
+  if (isLoading) return <LoadingState rows={8} />;
+
+  const customers = apiData?.data ?? [];
 
   const filtered = useMemo(() => {
-    // If API already filtered, return as-is; otherwise filter locally as fallback
     if (apiData?.data) return apiData.data;
-    return customers.filter((c: any) => {
-      if (filters.search && !c.name.toLowerCase().includes(filters.search.toLowerCase()) && !c.customerCode.includes(filters.search)) return false;
-      if (filters.riskLevel !== "all" && c.riskLevel !== filters.riskLevel) return false;
-      if (filters.segment !== "all" && c.segment !== filters.segment) return false;
-      if (filters.status !== "all" && c.status !== filters.status) return false;
-      return true;
-    });
-  }, [filters, apiData, customers]);
+    return customers;
+  }, [apiData, customers]);
 
+  if (filtered.length === 0) {
+    return (
+      <EmptyState
+        title="Nenhuma predição encontrada"
+        description="Importe dados de clientes para gerar predições de churn."
+        action={{ label: "Importar dados", onClick: () => navigate("/retain/upload") }}
+      />
+    );
+  }
 
   return (
     <div className="space-y-5 w-full">
