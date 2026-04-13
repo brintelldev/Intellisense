@@ -1,6 +1,6 @@
 import { Input } from "../../../shared/components/ui/input";
 import { Select } from "../../../shared/components/ui/select";
-import { RiskLevel } from "../../../data/types";
+import { RiskLevel } from "../../../shared/types";
 
 type CustomerStatus = "active" | "at_risk" | "churned" | "all";
 

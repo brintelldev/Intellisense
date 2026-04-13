@@ -1,7 +1,8 @@
 import { useState, useRef } from "react";
+import { useLocation } from "wouter";
 import { ColumnMapper } from "../../../shared/components/ColumnMapper";
 import { Progress } from "../../../shared/components/ui/progress";
-import { useObtainUploads, useUploadObtainCSV } from "../../../shared/hooks/useObtain";
+import { useObtainUploads, useUploadObtainCSV, useSuggestObtainMapping } from "../../../shared/hooks/useObtain";
 import { LoadingState } from "../../../shared/components/LoadingState";
 
 const SYSTEM_FIELDS = [
@@ -25,18 +26,36 @@ async function readCsvHeaders(file: File): Promise<string[]> {
   return firstLine.split(sep).map(h => h.replace(/^"|"$/g, "").trim()).filter(Boolean);
 }
 
+async function readCsvSampleRows(file: File): Promise<{ headers: string[]; sampleRows: Record<string, string>[] }> {
+  const text = await file.slice(0, 8192).text();
+  const lines = text.split(/\r?\n/).filter(Boolean);
+  const sep = lines[0].includes(";") ? ";" : ",";
+  const headers = lines[0].split(sep).map(h => h.replace(/^"|"$/g, "").trim());
+  const sampleRows: Record<string, string>[] = [];
+  for (let i = 1; i < Math.min(lines.length, 4); i++) {
+    const vals = lines[i].split(sep).map(v => v.replace(/^"|"$/g, "").trim());
+    const row: Record<string, string> = {};
+    headers.forEach((h, idx) => { row[h] = vals[idx] ?? ""; });
+    sampleRows.push(row);
+  }
+  return { headers, sampleRows };
+}
+
 type Step = "upload" | "mapping" | "processing" | "done";
 
 export default function ObtainUploadPage() {
+  const [, navigate] = useLocation();
   const { data: apiUploads, isLoading: loadingUploads } = useObtainUploads();
   const uploadMutation = useUploadObtainCSV();
+  const suggestMappingMutation = useSuggestObtainMapping();
 
   const [step, setStep] = useState<Step>("upload");
   const [filename, setFilename] = useState("");
   const [csvColumns, setCsvColumns] = useState<string[]>([]);
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
-  const [rowsCount, setRowsCount] = useState<number | null>(null);
+  const [uploadResult, setUploadResult] = useState<any>(null);
+  const [serverSuggestions, setServerSuggestions] = useState<any[] | undefined>(undefined);
   const fileRef = useRef<HTMLInputElement>(null);
   const fileObjRef = useRef<File | null>(null);
 
@@ -45,9 +64,15 @@ export default function ObtainUploadPage() {
     setFilename(file.name);
     setMapping({});
     setError(null);
+    setServerSuggestions(undefined);
     const headers = await readCsvHeaders(file);
     setCsvColumns(headers);
     setStep("mapping");
+    readCsvSampleRows(file).then((parsed) => {
+      suggestMappingMutation.mutate(parsed, {
+        onSuccess: (data: any) => { setServerSuggestions(data); },
+      });
+    });
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -71,7 +96,7 @@ export default function ObtainUploadPage() {
       { file: fileObjRef.current, mapping },
       {
         onSuccess: (data) => {
-          setRowsCount(data.rowsCount ?? null);
+          setUploadResult(data);
           setStep("done");
         },
         onError: (err) => {
@@ -88,7 +113,8 @@ export default function ObtainUploadPage() {
     setCsvColumns([]);
     setMapping({});
     setError(null);
-    setRowsCount(null);
+    setUploadResult(null);
+    setServerSuggestions(undefined);
     fileObjRef.current = null;
   };
 
@@ -144,7 +170,7 @@ export default function ObtainUploadPage() {
             <svg className="w-5 h-5 text-blue-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" /></svg>
             <p className="text-sm text-blue-700">Arquivo <strong>{filename}</strong> — <strong>{csvColumns.length} colunas</strong> detectadas — mapeie para os campos do sistema</p>
           </div>
-          <ColumnMapper csvColumns={csvColumns} systemFields={SYSTEM_FIELDS} onMappingChange={setMapping} />
+          <ColumnMapper csvColumns={csvColumns} systemFields={SYSTEM_FIELDS} onMappingChange={setMapping} serverSuggestions={serverSuggestions} />
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3 flex items-center gap-2">
               <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" /></svg>
@@ -174,18 +200,42 @@ export default function ObtainUploadPage() {
 
       {/* Done step */}
       {step === "done" && (
-        <div className="bg-white rounded-xl p-8 shadow-sm border border-slate-100 text-center space-y-4">
-          <div className="w-16 h-16 rounded-full bg-[#10B981]/10 flex items-center justify-center mx-auto">
-            <svg className="w-8 h-8 text-[#10B981]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+        <div className="bg-white rounded-xl p-8 shadow-sm border border-slate-100 space-y-4">
+          <div className="text-center space-y-2">
+            <div className="w-16 h-16 rounded-full bg-[#10B981]/10 flex items-center justify-center mx-auto">
+              <svg className="w-8 h-8 text-[#10B981]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            </div>
+            <p className="font-semibold text-slate-800 text-lg">{"Importação concluída!"}</p>
           </div>
-          <div>
-            <p className="font-semibold text-slate-800 text-lg">Importação concluída!</p>
-            <p className="text-sm text-slate-500 mt-1">
-              {rowsCount != null ? `${rowsCount} lead${rowsCount !== 1 ? "s" : ""} importado${rowsCount !== 1 ? "s" : ""}` : "Arquivo processado"} · Pronto para análise
-            </p>
-          </div>
+          {uploadResult && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <div className="bg-slate-50 rounded-lg p-3 text-center border border-slate-100">
+                <p className="text-2xl font-bold text-slate-800">{uploadResult.rowsCreated ?? 0}</p>
+                <p className="text-xs text-slate-500">Registros criados</p>
+              </div>
+              <div className="bg-slate-50 rounded-lg p-3 text-center border border-slate-100">
+                <p className="text-2xl font-bold text-slate-800">{uploadResult.rowsUpdated ?? 0}</p>
+                <p className="text-xs text-slate-500">Registros atualizados</p>
+              </div>
+              <div className="bg-slate-50 rounded-lg p-3 text-center border border-slate-100">
+                <p className="text-2xl font-bold text-slate-800">{uploadResult.rowsSkipped ?? 0}</p>
+                <p className="text-xs text-slate-500">Registros ignorados</p>
+              </div>
+              <div className="bg-slate-50 rounded-lg p-3 text-center border border-slate-100">
+                <p className="text-2xl font-bold text-[#10B981]">{uploadResult.scoresGenerated ?? 0}</p>
+                <p className="text-xs text-slate-500">Scores gerados</p>
+              </div>
+              <div className="bg-slate-50 rounded-lg p-3 text-center border border-slate-100">
+                <p className="text-2xl font-bold text-amber-600">{uploadResult.alertsGenerated ?? 0}</p>
+                <p className="text-xs text-slate-500">Alertas gerados</p>
+              </div>
+            </div>
+          )}
           <div className="flex gap-3 justify-center">
-            <button onClick={reset} className="px-4 py-2 border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50">Nova importação</button>
+            <button onClick={reset} className="px-4 py-2 border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50">{"Nova importação"}</button>
+            <button onClick={() => navigate("/obtain")} className="px-6 py-2 border border-[#10B981] text-[#10B981] text-sm font-medium rounded-lg hover:bg-[#10B981]/5 transition-colors">
+              Ver Alertas
+            </button>
             <a href="/obtain/leads" className="px-6 py-2 bg-[#10B981] text-white text-sm font-medium rounded-lg hover:bg-[#059669] transition-colors">
               Ver Leads
             </a>

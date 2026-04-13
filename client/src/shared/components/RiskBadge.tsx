@@ -1,4 +1,4 @@
-import { RiskLevel } from "../../data/types";
+import { RiskLevel } from "../types";
 import { cn } from "../lib/utils";
 
 const CONFIG: Record<RiskLevel, { label: string; className: string }> = {

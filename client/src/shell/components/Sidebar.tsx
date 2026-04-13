@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import {
   LayoutDashboard, Shield, BrainCircuit, SearchCode, Calculator, Users, Upload,
   TrendingUp, Target, Fingerprint, GitBranch, DollarSign, Settings, LogOut,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, BarChart3,
 } from "lucide-react";
 import { useAuthContext } from "../contexts/AuthContext";
 import { useLogout } from "../../shared/hooks/useAuth";
@@ -12,6 +12,7 @@ const RETAIN_ITEMS = [
   { icon: Shield, label: "Dashboard Executivo", path: "/retain" },
   { icon: BrainCircuit, label: "Predições de Churn", path: "/retain/predictions" },
   { icon: SearchCode, label: "Causas Raiz", path: "/retain/root-causes" },
+  { icon: BarChart3, label: "Revenue Analytics", path: "/retain/revenue" },
   { icon: Calculator, label: "Simulador ROI", path: "/retain/roi" },
   { icon: Users, label: "Clientes", path: "/retain/customers" },
   { icon: Upload, label: "Upload de Dados", path: "/retain/upload" },

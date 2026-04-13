@@ -9,6 +9,7 @@ import { retainRouter } from "./routes/retain/index";
 import { obtainRouter } from "./routes/obtain/index";
 import { tenantsRouter } from "./routes/tenants";
 import { seedRouter } from "./routes/seed";
+import { scoringRouter } from "./routes/scoring";
 import { authMiddleware } from "./middleware/auth";
 import { tenantMiddleware } from "./middleware/tenant";
 
@@ -65,6 +66,7 @@ export function createApp(sessionStore?: session.Store) {
 
   // Rotas protegidas
   app.use("/api/tenants", authMiddleware, tenantsRouter);
+  app.use("/api", authMiddleware, tenantMiddleware, scoringRouter);
   app.use("/api/retain", authMiddleware, tenantMiddleware, retainRouter);
   app.use("/api/obtain", authMiddleware, tenantMiddleware, obtainRouter);
 

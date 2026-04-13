@@ -7,7 +7,7 @@ import { LeadFilters } from "../components/LeadFilters";
 import { LeadDetailDrawer } from "../components/LeadDetailDrawer";
 import { EmptyState } from "../../../shared/components/EmptyState";
 import { LoadingState } from "../../../shared/components/LoadingState";
-import { Lead, ScoreTier, LeadStatus } from "../../../data/types";
+import { Lead, ScoreTier, LeadStatus } from "../../../shared/types";
 import { useObtainLeads } from "../../../shared/hooks/useObtain";
 
 interface Filters {

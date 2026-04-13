@@ -1,7 +1,7 @@
 import { Input } from "../../../shared/components/ui/input";
 import { Select } from "../../../shared/components/ui/select";
 import { Slider } from "../../../shared/components/ui/slider";
-import { ScoreTier, LeadStatus } from "../../../data/types";
+import { ScoreTier, LeadStatus } from "../../../shared/types";
 
 interface Filters {
   search: string;

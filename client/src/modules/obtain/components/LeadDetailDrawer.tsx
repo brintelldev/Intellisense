@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
 import { DetailDrawer } from "../../../shared/components/DetailDrawer";
 import { ShapWaterfall } from "../../../shared/components/ShapWaterfall";
+import { ScoreTimelineChart } from "../../../shared/components/ScoreTimelineChart";
 import { ScoreBadge } from "../../../shared/components/ScoreBadge";
 import { Progress } from "../../../shared/components/ui/progress";
-import { Lead } from "../../../data/types";
-import { useObtainLead, useCreateLeadAction } from "../../../shared/hooks/useObtain";
+import { Lead } from "../../../shared/types";
+import { useObtainLead, useCreateLeadAction, useLeadScoreHistory } from "../../../shared/hooks/useObtain";
 import { LoadingState } from "../../../shared/components/LoadingState";
 import { fmtBRLShort as fmtBRL } from "../../../shared/lib/format";
 
@@ -24,6 +25,7 @@ export function LeadDetailDrawer({ lead, onClose }: Props) {
   const [actionDone, setActionDone] = useState(false);
 
   const { data: apiLeadData, isLoading } = useObtainLead(lead?.id ?? null);
+  const { data: scoreHistory } = useLeadScoreHistory(lead?.id ?? null);
   const createLeadAction = useCreateLeadAction();
 
   useEffect(() => {
@@ -66,6 +68,13 @@ export function LeadDetailDrawer({ lead, onClose }: Props) {
             <p className="text-xl font-bold text-[#10B981]">{(lead.conversionProbability * 100).toFixed(0)}%</p>
           </div>
         </div>
+
+        {/* Score Timeline */}
+        {scoreHistory && scoreHistory.length > 0 && (
+          <div className="bg-slate-50 rounded-xl p-4">
+            <ScoreTimelineChart data={scoreHistory} variant="obtain" />
+          </div>
+        )}
 
         {/* SHAP Waterfall */}
         {score && (

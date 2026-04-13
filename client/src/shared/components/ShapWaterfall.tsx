@@ -1,4 +1,4 @@
-import { ShapValue } from "../../data/types";
+import { ShapValue } from "../types";
 import { cn } from "../lib/utils";
 
 interface ShapWaterfallProps {

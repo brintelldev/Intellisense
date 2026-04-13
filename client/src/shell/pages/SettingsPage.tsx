@@ -1,9 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../../shared/components/ui/tabs";
 import { useAuthContext } from "../contexts/AuthContext";
-import { SECTOR_PRESETS } from "../../data/sector-config";
+import { SECTOR_PRESETS } from "../../shared/lib/sector-presets";
 import { SectorConfig } from "../../shared/hooks/useAuth";
+import {
+  useScoringConfig, useSaveScoringConfig,
+  useRecalculateRetain, useRecalculateObtain,
+} from "../../shared/hooks/useRetain";
 
 const SECTOR_OPTIONS = [
   { value: "industrial_b2b", label: "Industrial B2B" },
@@ -162,6 +166,128 @@ function SectorConfigEditor({ config, onChange }: { config: SectorConfig; onChan
   );
 }
 
+const RETAIN_DIMENSION_LABELS: Record<string, string> = {
+  dimSatisfaction: "Satisfacao do Cliente",
+  dimPaymentRegularity: "Regularidade de Pagamento",
+  dimUsageIntensity: "Intensidade de Uso",
+  dimInteractionFrequency: "Frequencia de Interacao",
+  dimContractRemainingDays: "Tempo Restante de Contrato",
+  dimSupportVolume: "Volume de Chamados",
+  dimRecencyDays: "Dias Sem Interacao",
+  dimTenureDays: "Tempo de Relacionamento",
+};
+
+const OBTAIN_DIMENSION_LABELS: Record<string, string> = {
+  industryFit: "Fit de Industria",
+  companySizeFit: "Porte da Empresa",
+  revenuePotential: "Potencial de Receita",
+  sourceQuality: "Qualidade da Origem",
+  engagementLevel: "Nivel de Engajamento",
+  geographicFit: "Fit Geografico",
+};
+
+function ScoringConfigTab() {
+  const [activeModule, setActiveModule] = useState<"retain" | "obtain">("retain");
+  const { data: configData, isLoading } = useScoringConfig(activeModule);
+  const saveMutation = useSaveScoringConfig();
+  const recalcRetain = useRecalculateRetain();
+  const recalcObtain = useRecalculateObtain();
+  const [weights, setWeights] = useState<Record<string, number>>({});
+  const [successMsg, setSuccessMsg] = useState("");
+
+  useEffect(() => {
+    if (configData?.weights) {
+      setWeights(configData.weights);
+    }
+  }, [configData]);
+
+  const labels = activeModule === "retain" ? RETAIN_DIMENSION_LABELS : OBTAIN_DIMENSION_LABELS;
+  const totalWeight = Object.values(weights).reduce((a, b) => a + b, 0);
+  const isSaving = saveMutation.isPending || recalcRetain.isPending || recalcObtain.isPending;
+
+  const handleSaveAndRecalculate = async () => {
+    setSuccessMsg("");
+    const configType = activeModule === "retain" ? "health_score" : "lead_score";
+    await saveMutation.mutateAsync({ module: activeModule, configType, weights });
+
+    if (activeModule === "retain") {
+      const result = await recalcRetain.mutateAsync();
+      setSuccessMsg(`Recalculado: ${result.predictionsGenerated} predicoes, ${result.alertsGenerated} alertas gerados.`);
+    } else {
+      const result = await recalcObtain.mutateAsync();
+      setSuccessMsg(`Recalculado: ${result.scoresGenerated} scores, ${result.alertsGenerated} alertas gerados.`);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100 space-y-6">
+      <div className="flex gap-2">
+        <button
+          onClick={() => setActiveModule("retain")}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activeModule === "retain" ? "bg-[#293b83] text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+        >
+          Retain
+        </button>
+        <button
+          onClick={() => setActiveModule("obtain")}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activeModule === "obtain" ? "bg-[#293b83] text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+        >
+          Obtain
+        </button>
+      </div>
+
+      {isLoading ? (
+        <p className="text-sm text-slate-500">Carregando...</p>
+      ) : (
+        <div className="space-y-4 max-w-lg">
+          {Object.keys(labels).map((key) => (
+            <div key={key}>
+              <div className="flex justify-between text-sm mb-1">
+                <span className="font-medium text-slate-700">{labels[key]}</span>
+                <span className="text-slate-500 font-mono">{weights[key] ?? 0}</span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={30}
+                step={1}
+                value={weights[key] ?? 0}
+                onChange={(e) => setWeights({ ...weights, [key]: parseInt(e.target.value) })}
+                className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-[#293b83]"
+              />
+            </div>
+          ))}
+
+          <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+            <span className="text-sm font-semibold text-slate-700">Soma total dos pesos</span>
+            <span className={`text-sm font-bold ${totalWeight === 100 ? "text-green-600" : "text-amber-600"}`}>{totalWeight}</span>
+          </div>
+
+          <button
+            onClick={handleSaveAndRecalculate}
+            disabled={isSaving}
+            className="w-full h-10 bg-[#293b83] text-white rounded-lg text-sm font-semibold hover:bg-[#1e2d6b] transition-colors disabled:opacity-50"
+          >
+            {isSaving ? "Processando..." : "Salvar e Recalcular"}
+          </button>
+
+          {successMsg && (
+            <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-700">
+              {successMsg}
+            </div>
+          )}
+
+          {(saveMutation.isError || recalcRetain.isError || recalcObtain.isError) && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
+              Erro ao salvar ou recalcular. Tente novamente.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const { user, sectorConfig } = useAuthContext();
   const [config, setConfig] = useState<SectorConfig>(sectorConfig);
@@ -179,6 +305,7 @@ export default function SettingsPage() {
           <TabsTrigger value="company">Empresa</TabsTrigger>
           <TabsTrigger value="sector">Setor</TabsTrigger>
           <TabsTrigger value="users">Usuários</TabsTrigger>
+          <TabsTrigger value="scoring">Scoring</TabsTrigger>
         </TabsList>
 
         <TabsContent value="profile">
@@ -275,6 +402,9 @@ export default function SettingsPage() {
               </tbody>
             </table>
           </div>
+        </TabsContent>
+        <TabsContent value="scoring">
+          <ScoringConfigTab />
         </TabsContent>
       </Tabs>
     </div>

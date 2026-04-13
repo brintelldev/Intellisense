@@ -1,5 +1,5 @@
 import { AlertTriangle } from "lucide-react";
-import { FunnelStage } from "../../data/types";
+import { FunnelStage } from "../types";
 import { cn } from "../lib/utils";
 
 interface FunnelChartProps {

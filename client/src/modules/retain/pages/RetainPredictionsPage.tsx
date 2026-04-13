@@ -8,7 +8,7 @@ import { PredictionFilters } from "../components/PredictionFilters";
 import { EmptyState } from "../../../shared/components/EmptyState";
 import { LoadingState } from "../../../shared/components/LoadingState";
 import { useRetainPredictions } from "../../../shared/hooks/useRetain";
-import { Customer, RiskLevel } from "../../../data/types";
+import { Customer, RiskLevel } from "../../../shared/types";
 
 const SEGMENTS = ["Mineração", "Construção Civil", "Agropecuária", "Industrial"];
 

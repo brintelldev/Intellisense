@@ -1,4 +1,4 @@
-import { ScoreTier } from "../../data/types";
+import { ScoreTier } from "../types";
 import { cn } from "../lib/utils";
 
 const CONFIG: Record<ScoreTier, { label: string; className: string }> = {

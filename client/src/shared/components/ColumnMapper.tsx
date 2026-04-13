@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Progress } from "./ui/progress";
 
 interface SystemField {
@@ -7,10 +7,19 @@ interface SystemField {
   required?: boolean;
 }
 
+interface ServerSuggestion {
+  csvColumn: string;
+  suggestedDimension: string | null;
+  confidence: "high" | "medium" | "low";
+  confidenceScore: number;
+  reason: string;
+}
+
 interface ColumnMapperProps {
   csvColumns: string[];
   systemFields: SystemField[];
   onMappingChange?: (mapping: Record<string, string>) => void;
+  serverSuggestions?: ServerSuggestion[];
 }
 
 // Simple fuzzy match: returns true if col is a good match for label
@@ -58,11 +67,51 @@ function buildSuggestions(csvColumns: string[], systemFields: SystemField[]): Re
   return result;
 }
 
-export function ColumnMapper({ csvColumns, systemFields, onMappingChange }: ColumnMapperProps) {
-  const suggestions = useMemo(() => buildSuggestions(csvColumns, systemFields), [csvColumns, systemFields]);
+function buildServerSuggestions(
+  suggestions: ServerSuggestion[],
+  systemFields: SystemField[],
+): Record<string, string> {
+  const result: Record<string, string> = {};
+  const fieldKeys = new Set(systemFields.map(f => f.key));
+  for (const s of suggestions) {
+    if (s.suggestedDimension && fieldKeys.has(s.suggestedDimension) && s.confidenceScore > 0.3) {
+      result[s.suggestedDimension] = s.csvColumn;
+    }
+  }
+  return result;
+}
 
-  const [mapping, setMapping] = useState<Record<string, string>>(() => suggestions);
-  const [suggested] = useState<Record<string, string>>(suggestions);
+export function ColumnMapper({ csvColumns, systemFields, onMappingChange, serverSuggestions }: ColumnMapperProps) {
+  const localSuggestions = useMemo(() => buildSuggestions(csvColumns, systemFields), [csvColumns, systemFields]);
+  const initialMapping = useMemo(() => {
+    if (serverSuggestions && serverSuggestions.length > 0) {
+      return buildServerSuggestions(serverSuggestions, systemFields);
+    }
+    return localSuggestions;
+  }, [serverSuggestions, systemFields, localSuggestions]);
+
+  const [mapping, setMapping] = useState<Record<string, string>>(() => initialMapping);
+  const [suggested, setSuggested] = useState<Record<string, string>>(initialMapping);
+
+  useEffect(() => {
+    if (serverSuggestions && serverSuggestions.length > 0) {
+      const built = buildServerSuggestions(serverSuggestions, systemFields);
+      setMapping(built);
+      setSuggested(built);
+      onMappingChange?.(built);
+    }
+  }, [serverSuggestions]);
+
+  const serverConfidenceMap = useMemo(() => {
+    if (!serverSuggestions) return new Map<string, ServerSuggestion>();
+    const map = new Map<string, ServerSuggestion>();
+    for (const s of serverSuggestions) {
+      if (s.suggestedDimension) {
+        map.set(s.suggestedDimension, s);
+      }
+    }
+    return map;
+  }, [serverSuggestions]);
 
   const updateMapping = (fieldKey: string, csvColumn: string) => {
     const newMapping = { ...mapping, [fieldKey]: csvColumn };
@@ -121,12 +170,18 @@ export function ColumnMapper({ csvColumns, systemFields, onMappingChange }: Colu
                     </select>
                   </td>
                   <td className="px-4 py-2.5">
-                    {mapped && isSuggested
-                      ? <span className="text-amber-600 text-xs font-medium">💡 Sugerido</span>
-                      : mapped
-                      ? <span className="text-green-600 text-xs font-medium">✓ Mapeado</span>
-                      : <span className="text-slate-400 text-xs">— Não mapeado</span>
-                    }
+                    {(() => {
+                      const serverSugg = serverConfidenceMap.get(field.key);
+                      if (mapped && isSuggested && serverSugg) {
+                        const conf = serverSugg.confidence;
+                        if (conf === "high") return <span className="text-xs font-medium bg-green-100 text-green-700 px-2 py-0.5 rounded-full">{"Alta confian\u00e7a"}</span>;
+                        if (conf === "medium") return <span className="text-xs font-medium bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">{"M\u00e9dia confian\u00e7a"}</span>;
+                        return <span className="text-xs font-medium bg-red-100 text-red-700 px-2 py-0.5 rounded-full">{"Baixa confian\u00e7a"}</span>;
+                      }
+                      if (mapped && isSuggested) return <span className="text-amber-600 text-xs font-medium">{"\uD83D\uDCA1 Sugerido"}</span>;
+                      if (mapped) return <span className="text-green-600 text-xs font-medium">{"\u2713 Mapeado"}</span>;
+                      return <span className="text-slate-400 text-xs">{"\u2014 N\u00e3o mapeado"}</span>;
+                    })()}
                   </td>
                 </tr>
               );

@@ -1,4 +1,4 @@
-import { SectorConfig } from "../shared/hooks/useAuth";
+import { SectorConfig } from "../hooks/useAuth";
 
 export const SECTOR_PRESETS: Record<string, SectorConfig> = {
   industrial_b2b: {

@@ -547,14 +547,80 @@ seedRouter.post("/demo", async (_req, res) => {
         }
       }
 
-      // Run full pipeline after each "upload"
-      await runRetainPredictions(tenantId);
-      await generateAnalyticsSnapshot(tenantId);
+      // Run full pipeline after each "upload" — with offset date for trends
+      const snapshotDate = new Date();
+      snapshotDate.setMonth(snapshotDate.getMonth() - monthOffset);
+      const dateStr = snapshotDate.toISOString().split("T")[0];
+
+      await runRetainPredictions(tenantId, dateStr);
+      await generateAnalyticsSnapshot(tenantId, dateStr);
       await generateChurnCauses(tenantId);
     }
 
     // Generate alerts only on the final run
     await generateAlerts(tenantId);
+
+    // ── 3b. Customer notes for at-risk clients ──────────────────────────
+    const atRiskCodes = ["MIN-001", "MIN-002", "MIN-003", "MIN-004", "MIN-005"];
+    const atRiskCustomers = await db.select({ id: customers.id, customerCode: customers.customerCode })
+      .from(customers)
+      .where(sql`${customers.tenantId} = ${tenantId} AND ${customers.riskLevel} IN ('critical', 'high')`);
+
+    const noteTemplates: Record<string, { type: string; content: string; daysAgo: number }[]> = {
+      critical: [
+        { type: "call", content: "Ligação com diretor financeiro — confirmou atraso por fluxo de caixa. Prometeu pagamento parcial em 5 dias.", daysAgo: 12 },
+        { type: "meeting", content: "Reunião presencial de alinhamento. Cliente insatisfeito com tempo de resposta do suporte técnico. Escalado para gerente.", daysAgo: 5 },
+        { type: "action", content: "Enviada proposta de revisão contratual com desconto de 10% e renovação por 12 meses. Aguardando retorno.", daysAgo: 2 },
+      ],
+      high: [
+        { type: "call", content: "Contato inicial sobre renovação de contrato. Cliente com dúvidas sobre novos equipamentos disponíveis.", daysAgo: 18 },
+        { type: "email", content: "Enviado material técnico sobre novo modelo de equipamento recomendado. Lead engajado, pediu simulação de custo.", daysAgo: 8 },
+      ],
+    };
+
+    for (const c of atRiskCustomers) {
+      // Determine risk level from code
+      const riskTemplate = atRiskCodes.some(code => c.customerCode?.startsWith(code.split("-")[0]))
+        ? "critical"
+        : "high";
+      const templates = noteTemplates[riskTemplate] ?? noteTemplates.high;
+
+      for (const tmpl of templates) {
+        const createdAt = new Date();
+        createdAt.setDate(createdAt.getDate() - tmpl.daysAgo);
+        await db.insert(customerNotes).values({
+          tenantId,
+          customerId: c.id,
+          type: tmpl.type as any,
+          content: tmpl.content,
+          createdAt,
+        });
+      }
+    }
+
+    // ── 3c. Mark one customer as churned (demonstrate anti-ICP) ────────
+    const churnCandidates = await db.select({ id: customers.id })
+      .from(customers)
+      .where(sql`${customers.tenantId} = ${tenantId} AND ${customers.churnProbability} > 0.85`)
+      .orderBy(sql`${customers.churnProbability} DESC`)
+      .limit(1);
+
+    if (churnCandidates.length > 0) {
+      const churnedId = churnCandidates[0].id;
+      await db.update(customers)
+        .set({ status: "churned" as const, updatedAt: new Date() })
+        .where(eq(customers.id, churnedId));
+      await db.update(retainPredictions)
+        .set({ isActive: false })
+        .where(sql`${retainPredictions.customerId} = ${churnedId}`);
+      await db.insert(customerNotes).values({
+        tenantId,
+        customerId: churnedId,
+        type: "note" as any,
+        content: "CHURNED: Cliente encerrou contrato em " + new Date().toLocaleDateString("pt-BR") + ". Motivo: migração para concorrente com preço 15% menor. Oportunidade de retorno em 6-12 meses.",
+        createdAt: new Date(),
+      });
+    }
 
     // ── 4. Parse and insert leads from CSV ──────────────────────────────
     const leadCsvPath = path.join(csvDir, "construcao_leads.csv");

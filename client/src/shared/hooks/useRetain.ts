@@ -174,10 +174,62 @@ export function useMarkCustomerChurned() {
   });
 }
 
+// ─── Revenue Analytics ─────────────────────────────────────────────────────
+export function useRetainRevenueAnalytics() {
+  return useQuery({
+    queryKey: ["retain", "revenue-analytics"],
+    queryFn: () => api.get<any>("/retain/revenue-analytics"),
+    staleTime: 60_000,
+  });
+}
+
+// ─── Renewals ──────────────────────────────────────────────────────────────
+export function useRetainRenewals() {
+  return useQuery({
+    queryKey: ["retain", "renewals"],
+    queryFn: () => api.get<any[]>("/retain/renewals"),
+    staleTime: 60_000,
+  });
+}
+
 // ─── Suggest Mapping ────────────────────────────────────────────────────────
 export function useSuggestRetainMapping() {
   return useMutation({
     mutationFn: (data: { headers: string[]; sampleRows: Record<string, string>[] }) =>
       api.post<any[]>("/retain/upload/suggest-mapping", data),
+  });
+}
+
+// ─── Scoring Config ────────────────────────────────────────────────────────
+export function useScoringConfig(module: string) {
+  return useQuery({
+    queryKey: ["scoring-config", module],
+    queryFn: () => api.get<{ module: string; configType: string; weights: Record<string, number> }>(`/scoring-config?module=${module}`),
+    staleTime: 60_000,
+  });
+}
+
+export function useSaveScoringConfig() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { module: string; configType: string; weights: Record<string, number> }) =>
+      api.put<any>("/scoring-config", data),
+    onSuccess: (_, vars) => { qc.invalidateQueries({ queryKey: ["scoring-config", vars.module] }); },
+  });
+}
+
+export function useRecalculateRetain() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<{ message: string; predictionsGenerated: number; alertsGenerated: number }>("/retain/recalculate", {}),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["retain"] }); },
+  });
+}
+
+export function useRecalculateObtain() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<{ message: string; scoresGenerated: number; alertsGenerated: number }>("/obtain/recalculate", {}),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["obtain"] }); },
   });
 }

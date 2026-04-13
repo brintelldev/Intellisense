@@ -1,5 +1,5 @@
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer, Legend, Tooltip } from "recharts";
-import { ICPCluster } from "../../../data/types";
+import { ICPCluster } from "../../../shared/types";
 
 interface Props {
   clusters: ICPCluster[];

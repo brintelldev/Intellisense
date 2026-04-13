@@ -1,25 +1,46 @@
 import { useState, useEffect } from "react";
 import { DetailDrawer } from "../../../shared/components/DetailDrawer";
 import { ShapWaterfall } from "../../../shared/components/ShapWaterfall";
+import { ScoreTimelineChart } from "../../../shared/components/ScoreTimelineChart";
 import { RiskBadge } from "../../../shared/components/RiskBadge";
 import { Progress } from "../../../shared/components/ui/progress";
 import { LoadingState } from "../../../shared/components/LoadingState";
-import { useRetainPrediction, useCreateRetainAction } from "../../../shared/hooks/useRetain";
+import {
+  useRetainPrediction, useCreateRetainAction,
+  useCustomerScoreHistory, useCustomerNotes, useAddCustomerNote,
+} from "../../../shared/hooks/useRetain";
 import { fmtBRL } from "../../../shared/lib/format";
-import { Customer } from "../../../data/types";
+import { Customer } from "../../../shared/types";
 
 interface Props {
   customer: Customer | null;
   onClose: () => void;
 }
 
+const NOTE_TYPE_ICONS: Record<string, string> = {
+  note: "📝", call: "📞", email: "📧", meeting: "🤝", action: "⚡",
+};
+const NOTE_TYPES = [
+  { value: "note", label: "Nota" },
+  { value: "call", label: "Ligação" },
+  { value: "email", label: "Email" },
+  { value: "meeting", label: "Reunião" },
+  { value: "action", label: "Ação" },
+];
+
 export function PredictionDetailDrawer({ customer, onClose }: Props) {
   const [retentionActionDone, setRetentionActionDone] = useState(false);
+  const [noteType, setNoteType] = useState("note");
+  const [noteContent, setNoteContent] = useState("");
   const { data: apiPrediction, isLoading } = useRetainPrediction(customer?.id ?? null);
+  const { data: scoreHistory } = useCustomerScoreHistory(customer?.id ?? null);
+  const { data: notes } = useCustomerNotes(customer?.id ?? null);
+  const addNote = useAddCustomerNote();
   const createAction = useCreateRetainAction();
 
   useEffect(() => {
     setRetentionActionDone(false);
+    setNoteContent("");
   }, [customer?.id]);
 
   if (!customer) return null;
@@ -97,6 +118,71 @@ export function PredictionDetailDrawer({ customer, onClose }: Props) {
             )}
           </div>
         )}
+
+        {/* Score Timeline */}
+        {scoreHistory && scoreHistory.length > 0 && (
+          <div className="bg-slate-50 rounded-xl p-4">
+            <ScoreTimelineChart data={scoreHistory} variant="retain" />
+          </div>
+        )}
+
+        {/* Customer Notes / Timeline */}
+        <div>
+          <h4 className="font-semibold text-slate-700 text-sm mb-3">Timeline de Interações</h4>
+          <div className="flex gap-2 mb-3">
+            <select
+              value={noteType}
+              onChange={(e) => setNoteType(e.target.value)}
+              className="text-sm border border-slate-200 rounded-lg px-2 py-1.5 bg-white"
+            >
+              {NOTE_TYPES.map((t) => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
+            <input
+              type="text"
+              value={noteContent}
+              onChange={(e) => setNoteContent(e.target.value)}
+              placeholder="Adicionar nota..."
+              className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-1.5"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && noteContent.trim() && customer) {
+                  addNote.mutate({ customerId: customer.id, type: noteType, content: noteContent.trim() });
+                  setNoteContent("");
+                }
+              }}
+            />
+            <button
+              onClick={() => {
+                if (noteContent.trim() && customer) {
+                  addNote.mutate({ customerId: customer.id, type: noteType, content: noteContent.trim() });
+                  setNoteContent("");
+                }
+              }}
+              disabled={!noteContent.trim() || addNote.isPending}
+              className="px-3 py-1.5 bg-[#293b83] text-white text-sm rounded-lg hover:bg-[#1e2d6b] disabled:opacity-50"
+            >
+              {addNote.isPending ? "..." : "+"}
+            </button>
+          </div>
+          {notes && notes.length > 0 ? (
+            <div className="space-y-2 max-h-48 overflow-y-auto">
+              {notes.map((note: any) => (
+                <div key={note.id} className="flex items-start gap-2 text-sm bg-slate-50 rounded-lg p-2.5">
+                  <span className="text-base">{NOTE_TYPE_ICONS[note.type] ?? "📝"}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-slate-700">{note.content}</p>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      {new Date(note.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-slate-400">Nenhuma interação registrada</p>
+          )}
+        </div>
 
         {/* Customer info grid */}
         <div>

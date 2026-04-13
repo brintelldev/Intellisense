@@ -13,6 +13,7 @@ import RetainPredictionsPage from "./modules/retain/pages/RetainPredictionsPage"
 import RetainRootCausesPage from "./modules/retain/pages/RetainRootCausesPage";
 import RetainROIPage from "./modules/retain/pages/RetainROIPage";
 import RetainCustomersPage from "./modules/retain/pages/RetainCustomersPage";
+import RetainRevenueAnalyticsPage from "./modules/retain/pages/RetainRevenueAnalyticsPage";
 import RetainUploadPage from "./modules/retain/pages/RetainUploadPage";
 
 // Obtain Sense
@@ -54,6 +55,7 @@ function AuthenticatedRoutes() {
         <Route path="/retain/predictions" component={RetainPredictionsPage} />
         <Route path="/retain/root-causes" component={RetainRootCausesPage} />
         <Route path="/retain/roi" component={RetainROIPage} />
+        <Route path="/retain/revenue" component={RetainRevenueAnalyticsPage} />
         <Route path="/retain/customers" component={RetainCustomersPage} />
         <Route path="/retain/upload" component={RetainUploadPage} />
 

@@ -258,7 +258,7 @@ export function generateRecommendedAction(
 
 // ─── Orchestration Functions ────────────────────────────────────────────────
 
-export async function runRetainPredictions(tenantId: string): Promise<{
+export async function runRetainPredictions(tenantId: string, snapshotDate?: string): Promise<{
   predictionsGenerated: number;
 }> {
   // Load tenant-specific weights if configured
@@ -298,7 +298,7 @@ export async function runRetainPredictions(tenantId: string): Promise<{
       ),
     );
 
-  const today = new Date().toISOString().split("T")[0];
+  const today = snapshotDate ?? new Date().toISOString().split("T")[0];
   let predictionsGenerated = 0;
 
   for (const customer of allCustomers) {
@@ -367,7 +367,7 @@ export async function runRetainPredictions(tenantId: string): Promise<{
   return { predictionsGenerated };
 }
 
-export async function generateAnalyticsSnapshot(tenantId: string): Promise<void> {
+export async function generateAnalyticsSnapshot(tenantId: string, snapshotDate?: string): Promise<void> {
   const allCustomers = await db
     .select()
     .from(customers)
@@ -393,7 +393,7 @@ export async function generateAnalyticsSnapshot(tenantId: string): Promise<void>
     .reduce((sum, c, _, arr) => sum + (c.healthScore ?? 0) / arr.length, 0);
 
   const churnRate = total > 0 ? (churned / total) * 100 : 0;
-  const today = new Date().toISOString().split("T")[0];
+  const today = snapshotDate ?? new Date().toISOString().split("T")[0];
 
   await db.insert(retainAnalytics).values({
     tenantId,

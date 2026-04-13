@@ -8,7 +8,7 @@ import { AlertsList } from "../components/AlertsList";
 import { EmptyState } from "../../../shared/components/EmptyState";
 import { DataFreshnessIndicator } from "../../../shared/components/DataFreshnessIndicator";
 import { LoadingState } from "../../../shared/components/LoadingState";
-import { useRetainDashboard, useRetainDataFreshness, useRetainAlerts, useRetainRevenueBySegment, useRetainAnalyticsTrend } from "../../../shared/hooks/useRetain";
+import { useRetainDashboard, useRetainDataFreshness, useRetainAlerts, useRetainRevenueBySegment, useRetainAnalyticsTrend, useRetainRenewals } from "../../../shared/hooks/useRetain";
 import { fmtBRLShort as fmtBRL } from "../../../shared/lib/format";
 
 export default function RetainDashboardPage() {
@@ -17,6 +17,7 @@ export default function RetainDashboardPage() {
   const { data: alertsData } = useRetainAlerts();
   const { data: revenueBySegment } = useRetainRevenueBySegment();
   const { data: analyticsTrend } = useRetainAnalyticsTrend();
+  const { data: renewalsData } = useRetainRenewals();
   const [, navigate] = useLocation();
 
   if (isLoading) return <LoadingState rows={8} />;
@@ -99,6 +100,48 @@ export default function RetainDashboardPage() {
 
       {/* Alerts */}
       <AlertsList alerts={alertsData ?? []} />
+
+      {/* Renovações Próximas */}
+      {(renewalsData ?? []).length > 0 && (
+        <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-100">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-semibold text-slate-700">Renovações Próximas</h2>
+            {(renewalsData ?? []).length > 5 && (
+              <button
+                onClick={() => navigate("/retain/customers")}
+                className="text-xs font-medium text-[#293b83] hover:underline"
+              >
+                Ver todos
+              </button>
+            )}
+          </div>
+          <div className="space-y-2">
+            {(renewalsData ?? []).slice(0, 5).map((r: any) => {
+              const urgencyColor = r.contractRemainingDays < 30 ? "text-red-600 bg-red-50" : r.contractRemainingDays < 60 ? "text-orange-600 bg-orange-50" : "text-amber-600 bg-amber-50";
+              const riskColors: Record<string, string> = { low: "bg-green-100 text-green-700", medium: "bg-amber-100 text-amber-700", high: "bg-orange-100 text-orange-700", critical: "bg-red-100 text-red-700" };
+              return (
+                <div key={r.id} className="flex items-center justify-between py-2 border-b border-slate-50 last:border-0">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-slate-800 truncate">{r.name}</p>
+                      <p className="text-xs text-slate-400">{r.segment ?? "Sem segmento"}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 flex-shrink-0">
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${urgencyColor}`}>
+                      {r.contractRemainingDays}d
+                    </span>
+                    <span className="text-xs text-slate-500 tabular-nums w-8 text-center">{r.healthScore ?? "-"}</span>
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${riskColors[r.riskLevel] ?? "bg-slate-100 text-slate-500"}`}>
+                      {r.riskLevel}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

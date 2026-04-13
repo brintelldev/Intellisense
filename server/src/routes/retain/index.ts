@@ -124,7 +124,10 @@ retainRouter.get("/predictions", async (req, res) => {
     const pageSize = Math.min(parseInt(req.query.pageSize as string) || 20, 100);
     const { riskLevel, segment, search, sortBy, sortDir } = req.query;
 
-    const conditions: SQL[] = [eq(retainPredictions.tenantId, tenantId)];
+    const conditions: SQL[] = [
+      eq(retainPredictions.tenantId, tenantId),
+      eq(retainPredictions.isActive, true),
+    ];
     if (riskLevel) conditions.push(eq(retainPredictions.riskLevel, riskLevel as any));
     if (segment) conditions.push(eq(customers.segment, segment as string));
     if (search) conditions.push(ilike(customers.name, `%${search}%`));
@@ -180,6 +183,7 @@ retainRouter.get("/predictions/:customerId", async (req, res) => {
       .where(and(
         eq(retainPredictions.tenantId, tenantId),
         eq(retainPredictions.customerId, customerId),
+        eq(retainPredictions.isActive, true),
       )).limit(1);
 
     if (!row) return res.status(404).json({ error: "Predição não encontrada" });
@@ -669,6 +673,116 @@ retainRouter.post("/customers/:id/notes", async (req, res) => {
   } catch (err) {
     console.error("Create note error:", err);
     res.status(500).json({ error: "Erro ao criar nota" });
+  }
+});
+
+// ─── GET /revenue-analytics ─────────────────────────────────────────────────
+retainRouter.get("/revenue-analytics", async (req, res) => {
+  try {
+    const tenantId = req.tenantId!;
+
+    const snapshots = await db.select().from(retainAnalytics)
+      .where(eq(retainAnalytics.tenantId, tenantId))
+      .orderBy(desc(retainAnalytics.snapshotDate)).limit(2);
+
+    const latest = snapshots[0];
+    const previous = snapshots[1];
+
+    const mrrResult = await db.select({
+      total: sql<number>`coalesce(sum(${customers.dimRevenue}), 0)::real`,
+    }).from(customers).where(and(
+      eq(customers.tenantId, tenantId),
+      sql`${customers.status} != 'churned'`,
+    ));
+    const mrr = mrrResult[0]?.total ?? 0;
+
+    const mrrPrevious = previous?.mrr ?? 0;
+    const mrrGrowth = mrrPrevious > 0 ? Math.round(((mrr - mrrPrevious) / mrrPrevious) * 1000) / 10 : 0;
+    const nrr = mrrPrevious > 0 ? Math.round((mrr / mrrPrevious) * 1000) / 10 : 0;
+
+    const previousDate = previous?.snapshotDate ?? "1970-01-01";
+    const newCustomerRevenueResult = await db.select({
+      total: sql<number>`coalesce(sum(${customers.dimRevenue}), 0)::real`,
+    }).from(customers).where(and(
+      eq(customers.tenantId, tenantId),
+      sql`${customers.status} != 'churned'`,
+      sql`${customers.createdAt} > ${previousDate}::timestamp`,
+    ));
+    const newCustomerRevenue = newCustomerRevenueResult[0]?.total ?? 0;
+
+    const grr = mrrPrevious > 0 ? Math.round(((mrr - newCustomerRevenue) / mrrPrevious) * 1000) / 10 : 0;
+
+    const churnedRevenueResult = await db.select({
+      total: sql<number>`coalesce(sum(${customers.dimRevenue}), 0)::real`,
+    }).from(customers).where(and(
+      eq(customers.tenantId, tenantId),
+      eq(customers.status, "churned"),
+      sql`${customers.churnDate} > ${previousDate}`,
+    ));
+    const churnRevenue = churnedRevenueResult[0]?.total ?? 0;
+
+    const existingRevenuePrevious = mrrPrevious - newCustomerRevenue;
+    const existingRevenueCurrent = mrr - newCustomerRevenue;
+    const revenueDiff = existingRevenueCurrent - existingRevenuePrevious + churnRevenue;
+    const expansion = Math.max(revenueDiff, 0);
+    const contraction = Math.min(revenueDiff, 0);
+
+    const waterfall = [
+      { category: "MRR Início", value: mrrPrevious },
+      { category: "Novos", value: newCustomerRevenue },
+      { category: "Expansão", value: expansion },
+      { category: "Contração", value: contraction },
+      { category: "Churn", value: -churnRevenue },
+      { category: "MRR Fim", value: mrr },
+    ];
+
+    const revenueByRiskRows = await db.select({
+      riskLevel: customers.riskLevel,
+      revenue: sql<number>`coalesce(sum(${customers.dimRevenue}), 0)::real`,
+      count: sql<number>`count(*)::int`,
+    }).from(customers).where(and(
+      eq(customers.tenantId, tenantId),
+      sql`${customers.status} != 'churned'`,
+    )).groupBy(customers.riskLevel);
+
+    const revenueByRisk = revenueByRiskRows.map(r => ({
+      riskLevel: r.riskLevel ?? "low",
+      revenue: r.revenue,
+      count: r.count,
+    }));
+
+    res.json({ mrr, mrrPrevious, mrrGrowth, nrr, grr, waterfall, revenueByRisk });
+  } catch (err) {
+    console.error("Revenue analytics error:", err);
+    res.status(500).json({ error: "Erro ao buscar revenue analytics" });
+  }
+});
+
+// ─── GET /renewals ──────────────────────────────────────────────────────────
+retainRouter.get("/renewals", async (req, res) => {
+  try {
+    const tenantId = req.tenantId!;
+
+    const rows = await db.select().from(customers).where(and(
+      eq(customers.tenantId, tenantId),
+      sql`${customers.dimContractRemainingDays} IS NOT NULL`,
+      sql`${customers.dimContractRemainingDays} < 90`,
+    )).orderBy(asc(customers.dimContractRemainingDays));
+
+    const data = rows.map(c => ({
+      id: c.id,
+      name: c.name,
+      segment: c.segment,
+      dimRevenue: c.dimRevenue,
+      healthScore: c.healthScore,
+      riskLevel: c.riskLevel,
+      contractRemainingDays: c.dimContractRemainingDays,
+    }));
+
+    res.json(data);
+  } catch (err) {
+    console.error("Renewals error:", err);
+    res.status(500).json({ error: "Erro ao buscar renovações" });
   }
 });
 

@@ -8,7 +8,7 @@ import { Select } from "../../../shared/components/ui/select";
 import { EmptyState } from "../../../shared/components/EmptyState";
 import { LoadingState } from "../../../shared/components/LoadingState";
 import { useRetainCustomers } from "../../../shared/hooks/useRetain";
-import { Customer, RiskLevel, CustomerStatus } from "../../../data/types";
+import { Customer, RiskLevel, CustomerStatus } from "../../../shared/types";
 
 const SEGMENTS = ["Mineração", "Construção Civil", "Agropecuária", "Industrial"];
 

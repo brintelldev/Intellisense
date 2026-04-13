@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { ColumnMapper } from "../../../shared/components/ColumnMapper";
 import { Progress } from "../../../shared/components/ui/progress";
 import { LoadingState } from "../../../shared/components/LoadingState";
-import { useRetainUploads, useUploadRetainCSV } from "../../../shared/hooks/useRetain";
+import { useRetainUploads, useUploadRetainCSV, useSuggestRetainMapping } from "../../../shared/hooks/useRetain";
 
 const SYSTEM_FIELDS = [
   { key: "id", label: "Identificador do cliente", required: true },
@@ -26,19 +26,36 @@ async function readCsvHeaders(file: File): Promise<string[]> {
   return firstLine.split(sep).map(h => h.replace(/^"|"$/g, "").trim()).filter(Boolean);
 }
 
+async function readCsvSampleRows(file: File): Promise<{ headers: string[]; sampleRows: Record<string, string>[] }> {
+  const text = await file.slice(0, 8192).text();
+  const lines = text.split(/\r?\n/).filter(Boolean);
+  const sep = lines[0].includes(";") ? ";" : ",";
+  const headers = lines[0].split(sep).map(h => h.replace(/^"|"$/g, "").trim());
+  const sampleRows: Record<string, string>[] = [];
+  for (let i = 1; i < Math.min(lines.length, 4); i++) {
+    const vals = lines[i].split(sep).map(v => v.replace(/^"|"$/g, "").trim());
+    const row: Record<string, string> = {};
+    headers.forEach((h, idx) => { row[h] = vals[idx] ?? ""; });
+    sampleRows.push(row);
+  }
+  return { headers, sampleRows };
+}
+
 type Step = "upload" | "mapping" | "processing" | "done";
 
 export default function RetainUploadPage() {
   const [, navigate] = useLocation();
   const { data: apiUploads, isLoading: uploadsLoading } = useRetainUploads();
   const uploadMutation = useUploadRetainCSV();
+  const suggestMappingMutation = useSuggestRetainMapping();
 
   const [step, setStep] = useState<Step>("upload");
   const [filename, setFilename] = useState("");
   const [csvColumns, setCsvColumns] = useState<string[]>([]);
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
-  const [rowsCount, setRowsCount] = useState<number | null>(null);
+  const [uploadResult, setUploadResult] = useState<any>(null);
+  const [serverSuggestions, setServerSuggestions] = useState<any[] | undefined>(undefined);
   const fileRef = useRef<HTMLInputElement>(null);
   const fileObjRef = useRef<File | null>(null);
 
@@ -47,9 +64,15 @@ export default function RetainUploadPage() {
     setFilename(file.name);
     setMapping({});
     setError(null);
+    setServerSuggestions(undefined);
     const headers = await readCsvHeaders(file);
     setCsvColumns(headers);
     setStep("mapping");
+    readCsvSampleRows(file).then((parsed) => {
+      suggestMappingMutation.mutate(parsed, {
+        onSuccess: (data: any) => { setServerSuggestions(data); },
+      });
+    });
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -73,7 +96,7 @@ export default function RetainUploadPage() {
       { file: fileObjRef.current, mapping },
       {
         onSuccess: (data) => {
-          setRowsCount(data.rowsCount ?? null);
+          setUploadResult(data);
           setStep("done");
         },
         onError: (err) => {
@@ -90,7 +113,8 @@ export default function RetainUploadPage() {
     setCsvColumns([]);
     setMapping({});
     setError(null);
-    setRowsCount(null);
+    setUploadResult(null);
+    setServerSuggestions(undefined);
     fileObjRef.current = null;
   };
 
@@ -138,7 +162,7 @@ export default function RetainUploadPage() {
             </div>
           </div>
           <h3 className="font-semibold text-slate-700">Mapeie suas colunas para as dimensões do Retain Sense</h3>
-          <ColumnMapper csvColumns={csvColumns} systemFields={SYSTEM_FIELDS} onMappingChange={setMapping} />
+          <ColumnMapper csvColumns={csvColumns} systemFields={SYSTEM_FIELDS} onMappingChange={setMapping} serverSuggestions={serverSuggestions} />
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3 flex items-center gap-2">
               <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" /></svg>
@@ -168,17 +192,43 @@ export default function RetainUploadPage() {
       )}
 
       {step === "done" && (
-        <div className="bg-green-50 rounded-xl p-6 border border-green-200 text-center space-y-3">
-          <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center mx-auto">
-            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
+        <div className="bg-green-50 rounded-xl p-6 border border-green-200 space-y-4">
+          <div className="text-center space-y-2">
+            <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center mx-auto">
+              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
+            </div>
+            <p className="text-xl font-bold text-green-800">Processamento completo!</p>
           </div>
-          <p className="text-xl font-bold text-green-800">Processamento completo!</p>
-          <p className="text-green-700">
-            {rowsCount != null ? `${rowsCount} empresa${rowsCount !== 1 ? "s" : ""} importada${rowsCount !== 1 ? "s" : ""} com sucesso.` : "Arquivo processado com sucesso."}
-          </p>
+          {uploadResult && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <div className="bg-white rounded-lg p-3 text-center border border-green-100">
+                <p className="text-2xl font-bold text-slate-800">{uploadResult.rowsCreated ?? 0}</p>
+                <p className="text-xs text-slate-500">Registros criados</p>
+              </div>
+              <div className="bg-white rounded-lg p-3 text-center border border-green-100">
+                <p className="text-2xl font-bold text-slate-800">{uploadResult.rowsUpdated ?? 0}</p>
+                <p className="text-xs text-slate-500">Registros atualizados</p>
+              </div>
+              <div className="bg-white rounded-lg p-3 text-center border border-green-100">
+                <p className="text-2xl font-bold text-slate-800">{uploadResult.rowsSkipped ?? 0}</p>
+                <p className="text-xs text-slate-500">Registros ignorados</p>
+              </div>
+              <div className="bg-white rounded-lg p-3 text-center border border-green-100">
+                <p className="text-2xl font-bold text-[#293b83]">{uploadResult.predictionsGenerated ?? 0}</p>
+                <p className="text-xs text-slate-500">Predições geradas</p>
+              </div>
+              <div className="bg-white rounded-lg p-3 text-center border border-green-100">
+                <p className="text-2xl font-bold text-amber-600">{uploadResult.alertsGenerated ?? 0}</p>
+                <p className="text-xs text-slate-500">Alertas gerados</p>
+              </div>
+            </div>
+          )}
           <div className="flex gap-3 justify-center">
             <button onClick={reset} className="h-10 px-5 border border-green-300 text-green-700 rounded-lg text-sm hover:bg-green-100">
               Novo upload
+            </button>
+            <button onClick={() => navigate("/retain")} className="h-10 px-6 border border-[#293b83] text-[#293b83] rounded-lg text-sm font-semibold hover:bg-[#293b83]/5">
+              Ver Alertas
             </button>
             <button onClick={() => navigate("/retain/predictions")} className="h-10 px-6 bg-[#293b83] text-white rounded-lg text-sm font-semibold hover:bg-[#1e2d6b]">
               Ver predições →

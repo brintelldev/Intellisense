@@ -1,5 +1,5 @@
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
-import { ICPCluster } from "../../../data/types";
+import { ICPCluster } from "../../../shared/types";
 
 interface Props {
   clusters: ICPCluster[];
