@@ -89,8 +89,6 @@ export default function RetainCustomersPage() {
     segment: segment !== "all" ? segment : undefined,
   });
 
-  if (isLoading) return <LoadingState rows={8} />;
-
   const customers = apiData?.data ?? [];
 
   const filtered = useMemo(() => {
@@ -104,6 +102,8 @@ export default function RetainCustomersPage() {
       return true;
     });
   }, [status, revenueMin, revenueMax, customers]);
+
+  if (isLoading) return <LoadingState rows={8} />;
 
   if (filtered.length === 0 && !search && riskLevel === "all" && segment === "all" && status === "all") {
     return (

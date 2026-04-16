@@ -105,8 +105,6 @@ export default function ObtainLeadsPage() {
     search: filters.search || undefined,
   });
 
-  if (isLoading) return <LoadingState rows={8} />;
-
   const leads = apiLeadsData?.data ?? [];
 
   const filtered = useMemo(() => {
@@ -123,6 +121,8 @@ export default function ObtainLeadsPage() {
       return true;
     });
   }, [filters, leads]);
+
+  if (isLoading) return <LoadingState rows={8} />;
 
   if (filtered.length === 0 && !filters.search && filters.scoreTier === "all" && filters.status === "all" && filters.source === "all") {
     return (

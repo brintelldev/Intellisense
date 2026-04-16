@@ -19,12 +19,14 @@ const RETAIN_SYNONYMS: Record<string, string[]> = {
   customerCode: [
     "id", "codigo", "código", "code", "customer_code", "cod_cliente",
     "codigo_cliente", "id_cliente", "customer_id", "client_id",
+    "razao_social_codigo", "cod", "cliente_id",
   ],
   name: [
     "name", "nome", "razao_social", "razão_social", "empresa", "company",
     "nome_empresa", "company_name", "cliente", "customer",
+    "razão_social", "razao social", "razão social",
   ],
-  email: ["email", "e-mail", "e_mail", "mail", "email_contato"],
+  email: ["email", "e-mail", "e_mail", "mail", "email_contato", "e-mail_corporativo", "email_corporativo", "e-mail corporativo"],
   phone: ["phone", "telefone", "fone", "tel", "celular", "whatsapp"],
   city: ["city", "cidade", "municipio", "município"],
   state: ["state", "estado", "uf", "sigla_uf"],
@@ -35,50 +37,86 @@ const RETAIN_SYNONYMS: Record<string, string[]> = {
     "revenue", "receita", "faturamento", "faturamento_mensal", "mrr",
     "monthly_revenue", "valor_contrato", "contrato_mensal", "mensalidade",
     "dim_revenue", "receita_mensal", "valor_mensal",
+    // CSV C aliases
+    "receita_recorrente_mensal", "receita recorrente mensal",
+    "valor_mensal_contrato", "rrm",
   ],
   dimPaymentRegularity: [
     "payment_regularity", "regularidade_pagamento", "dias_atraso",
     "dias_atraso_pgto", "payment_delay", "payment_delay_days",
     "atraso_medio", "atraso_pagamento", "dim_payment_regularity",
     "inadimplencia", "days_overdue",
+    // CSV A aliases
+    "adimplencia (%)", "adimplência (%)", "adimplencia", "adimplência",
+    // CSV C aliases
+    "indice_adimplencia", "índice_adimplência",
+    "indice de adimplencia", "índice de adimplência", "indice_de_adimplencia",
+    "indice adimplencia", "indice adimplência",
   ],
   dimTenureDays: [
     "tenure", "tenure_days", "tempo_relacionamento", "meses_contrato",
     "months_active", "dias_cliente", "tempo_cliente", "dim_tenure_days",
     "antiguidade", "meses_ativo",
+    // CSV A aliases
+    "meses de contrato", "meses_de_contrato",
+    // CSV C aliases
+    "vigencia_contratual", "vigência_contratual",
+    "vigencia contratual (meses)", "vigência contratual (meses)",
+    "vigencia contratual", "vigência contratual",
   ],
   dimInteractionFrequency: [
     "interaction_frequency", "frequencia_interacao", "frequência_interação",
     "contatos_mes", "frequencia_contato", "interactions", "touchpoints",
     "dim_interaction_frequency", "reunioes_mes",
+    // CSV C aliases
+    "frequencia_de_uso", "frequência de uso", "frequência_de_uso (%)",
+    "frequencia_de_uso (%)", "frequencia de uso (%)",
   ],
   dimSupportVolume: [
     "support_volume", "chamados", "tickets", "tickets_abertos",
     "chamados_abertos", "support_tickets", "tickets_open",
     "dim_support_volume", "qtd_chamados", "suporte",
+    // CSV C aliases
+    "tickets abertos",
   ],
   dimSatisfaction: [
     "satisfaction", "satisfacao", "satisfação", "nps", "csat",
     "nota_satisfacao", "nota_nps", "customer_satisfaction",
     "dim_satisfaction", "nota", "avaliacao", "avaliação",
-    "csat_score", "score_satisfacao",
+    "csat_score", "score_satisfacao", "nps_score", "net_promoter",
+    "net_promoter_score", "indice_satisfacao", "score",
+    // CSV C aliases
+    "net promoter score", "satisfacao_nps", "satisfação nps",
   ],
   dimContractRemainingDays: [
     "contract_remaining", "dias_restantes_contrato", "contract_days_left",
     "contract_remaining_days", "vigencia_restante", "dim_contract_remaining_days",
     "dias_contrato", "vencimento", "prazo_contrato",
+    // CSV A aliases
+    "contrato termina em", "contrato_termina_em", "termina em",
+    // CSV C aliases (date-based)
+    "data_limite_contrato", "data limite de contrato",
+    "data limite contrato",
+    "data_vencimento", "data de vencimento",
   ],
   dimUsageIntensity: [
     "usage_intensity", "intensidade_uso", "uso", "usage",
     "horas_uso", "horas_maquina", "horas_maquina_mes",
     "feature_adoption", "feature_adoption_pct", "logins_per_month",
     "logins_mes", "dim_usage_intensity", "utilizacao", "utilização",
+    // CSV C aliases
+    "score_engajamento", "score de engajamento",
+    "engajamento", "índice de engajamento", "indice_engajamento",
   ],
   dimRecencyDays: [
     "recency", "recencia", "recência", "dias_sem_compra",
     "dias_sem_interacao", "days_since_last", "last_activity_days",
     "dim_recency_days", "dias_sem_pedido", "days_since_last_login",
     "ultima_compra", "último_contato",
+    // CSV A aliases
+    "dias sem contato", "dias_sem_contato",
+    // CSV C aliases
+    "inatividade", "inatividade (dias)", "dias_inativo",
   ],
 };
 
@@ -231,20 +269,30 @@ export function suggestMapping(
   const usedDimensions = new Set<string>();
   const results: SuggestedMapping[] = [];
 
+  // Normalize helper: lowercase, trim, collapse special chars and spaces to underscore
+  // Also strips accent-like parentheses patterns e.g. "Frequência de uso (%)" → "frequencia_de_uso_(%)"
+  const norm = (s: string) => s.toLowerCase().trim()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // remove accents
+    .replace(/\s+/g, "_")                              // spaces → underscore
+    .replace(/[()%]/g, "");                            // strip parens/percent
+
   // First pass: exact and synonym matches
   for (const header of headers) {
-    const headerLower = header.toLowerCase().trim().replace(/\s+/g, "_");
+    const headerLower = norm(header);
     let bestMatch: { dimension: string; score: number; reason: string } | null = null;
 
     for (const [dimension, aliases] of Object.entries(synonyms)) {
-      // Exact match
-      if (aliases.includes(headerLower)) {
-        bestMatch = { dimension, score: 0.95, reason: `Match exato com "${headerLower}"` };
+      // Exact match (normalize alias the same way)
+      const normalizedAliases = aliases.map(norm);
+      if (normalizedAliases.includes(headerLower)) {
+        const matchedAlias = aliases[normalizedAliases.indexOf(headerLower)];
+        bestMatch = { dimension, score: 0.95, reason: `Match exato com "${matchedAlias}"` };
         break;
       }
 
       // Partial match (header contains alias or alias contains header)
-      for (const alias of aliases) {
+      for (let ai = 0; ai < aliases.length; ai++) {
+        const alias = normalizedAliases[ai];
         if (headerLower.includes(alias) || alias.includes(headerLower)) {
           const score = Math.max(
             alias.length / headerLower.length,
@@ -252,7 +300,7 @@ export function suggestMapping(
           ) * 0.7;
 
           if (!bestMatch || score > bestMatch.score) {
-            bestMatch = { dimension, score: Math.min(score, 0.8), reason: `Semelhança com "${alias}"` };
+            bestMatch = { dimension, score: Math.min(score, 0.8), reason: `Semelhança com "${aliases[ai]}"` };
           }
         }
       }

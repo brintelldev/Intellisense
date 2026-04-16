@@ -27,7 +27,7 @@ export default function ObtainFunnelPage() {
   }
 
   const totalRevenue = funnelStages.reduce((a: number, s: any) => a + s.revenueAtRisk, 0);
-  const totalHotStuck = funnelStages.reduce((a: number, s: any) => a + s.hotLeadsStuck, 0);
+  const totalHotStuck = funnelStages.reduce((a: number, s: any) => a + (s.hotLeadsStuck ?? 0), 0);
   const conversionRate = funnelStages.length > 0
     ? ((funnelStages[funnelStages.length - 1].leadsCount / funnelStages[0].leadsCount) * 100).toFixed(1)
     : "0";

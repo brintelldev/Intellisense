@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useLocation } from "wouter";
 import { DataTable, ColumnDef } from "../../../shared/components/DataTable";
 import { RiskBadge } from "../../../shared/components/RiskBadge";
@@ -120,16 +120,11 @@ export default function RetainPredictionsPage() {
     segment: filters.segment !== "all" ? filters.segment : undefined,
   });
 
-  if (isLoading) return <LoadingState rows={8} />;
-
   const customers = apiData?.data ?? [];
 
-  const filtered = useMemo(() => {
-    if (apiData?.data) return apiData.data;
-    return customers;
-  }, [apiData, customers]);
+  if (isLoading) return <LoadingState rows={8} />;
 
-  if (filtered.length === 0) {
+  if (customers.length === 0) {
     return (
       <EmptyState
         title="Nenhuma predição encontrada"
@@ -160,7 +155,7 @@ export default function RetainPredictionsPage() {
 
       <DataTable
         columns={columns}
-        data={filtered}
+        data={customers}
         rowKey={(r) => r.id}
         onRowClick={setSelected}
         highlightFn={(r) => HIGHLIGHT_MAP[r.riskLevel]}

@@ -15,6 +15,7 @@ import RetainROIPage from "./modules/retain/pages/RetainROIPage";
 import RetainCustomersPage from "./modules/retain/pages/RetainCustomersPage";
 import RetainRevenueAnalyticsPage from "./modules/retain/pages/RetainRevenueAnalyticsPage";
 import RetainUploadPage from "./modules/retain/pages/RetainUploadPage";
+import RetainVozDoClientePage from "./modules/retain/pages/RetainVozDoClientePage";
 
 // Obtain Sense
 import ObtainDashboardPage from "./modules/obtain/pages/ObtainDashboardPage";
@@ -57,6 +58,7 @@ function AuthenticatedRoutes() {
         <Route path="/retain/roi" component={RetainROIPage} />
         <Route path="/retain/revenue" component={RetainRevenueAnalyticsPage} />
         <Route path="/retain/customers" component={RetainCustomersPage} />
+        <Route path="/retain/voz-do-cliente" component={RetainVozDoClientePage} />
         <Route path="/retain/upload" component={RetainUploadPage} />
 
         {/* Obtain Sense */}

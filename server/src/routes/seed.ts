@@ -29,7 +29,10 @@ seedRouter.post("/dcco", async (_req, res) => {
 
     for (const existing of existingTenants) {
       const tid = existing.id;
+      // Delete child tables before parents (FK order)
       await db.execute(sql`DELETE FROM obtain_lead_actions WHERE tenant_id = ${tid}`);
+      await db.execute(sql`DELETE FROM obtain_alerts WHERE tenant_id = ${tid}`);
+      await db.execute(sql`DELETE FROM lead_score_history WHERE lead_id IN (SELECT id FROM leads WHERE tenant_id = ${tid})`);
       await db.execute(sql`DELETE FROM obtain_scores WHERE tenant_id = ${tid}`);
       await db.execute(sql`DELETE FROM obtain_campaign_roi WHERE tenant_id = ${tid}`);
       await db.execute(sql`DELETE FROM obtain_funnel_metrics WHERE tenant_id = ${tid}`);
@@ -37,12 +40,18 @@ seedRouter.post("/dcco", async (_req, res) => {
       await db.execute(sql`DELETE FROM leads WHERE tenant_id = ${tid}`);
       await db.execute(sql`DELETE FROM obtain_icp_clusters WHERE tenant_id = ${tid}`);
       await db.execute(sql`DELETE FROM obtain_campaigns WHERE tenant_id = ${tid}`);
+      await db.execute(sql`DELETE FROM retain_alerts WHERE tenant_id = ${tid}`);
       await db.execute(sql`DELETE FROM retain_actions WHERE tenant_id = ${tid}`);
       await db.execute(sql`DELETE FROM retain_predictions WHERE tenant_id = ${tid}`);
       await db.execute(sql`DELETE FROM retain_churn_causes WHERE tenant_id = ${tid}`);
       await db.execute(sql`DELETE FROM retain_analytics WHERE tenant_id = ${tid}`);
       await db.execute(sql`DELETE FROM retain_uploads WHERE tenant_id = ${tid}`);
+      await db.execute(sql`DELETE FROM customer_notes WHERE customer_id IN (SELECT id FROM customers WHERE tenant_id = ${tid})`);
+      await db.execute(sql`DELETE FROM customer_score_history WHERE customer_id IN (SELECT id FROM customers WHERE tenant_id = ${tid})`);
       await db.execute(sql`DELETE FROM customers WHERE tenant_id = ${tid}`);
+      await db.execute(sql`DELETE FROM scoring_configs WHERE tenant_id = ${tid}`);
+      await db.execute(sql`DELETE FROM custom_dimensions WHERE tenant_id = ${tid}`);
+      await db.execute(sql`DELETE FROM column_mapping_templates WHERE tenant_id = ${tid}`);
       await db.execute(sql`DELETE FROM users WHERE tenant_id = ${tid}`);
       await db.execute(sql`DELETE FROM tenants WHERE id = ${tid}`);
     }

@@ -7,6 +7,7 @@ import { retainRouter } from "./routes/retain/index.js";
 import { obtainRouter } from "./routes/obtain/index.js";
 import { tenantsRouter } from "./routes/tenants.js";
 import { seedRouter } from "./routes/seed.js";
+import { scoringRouter } from "./routes/scoring.js";
 import { authMiddleware } from "./middleware/auth.js";
 import { tenantMiddleware } from "./middleware/tenant.js";
 
@@ -68,6 +69,7 @@ app.use("/api/seed", seedRouter);
 app.use("/api/tenants", authMiddleware, tenantsRouter);
 app.use("/api/retain", authMiddleware, tenantMiddleware, retainRouter);
 app.use("/api/obtain", authMiddleware, tenantMiddleware, obtainRouter);
+app.use("/api", authMiddleware, tenantMiddleware, scoringRouter);
 
 // Error handler
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
