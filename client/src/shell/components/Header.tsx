@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useLocation } from "wouter";
 import { useAuthContext } from "../contexts/AuthContext";
 import { useLogout } from "../../shared/hooks/useAuth";
+import { AlertBadge } from "./AlertBadge";
 
 const ROUTE_LABELS: Record<string, string[]> = {
   "/": ["Ciclo de Vida"],
@@ -9,7 +10,10 @@ const ROUTE_LABELS: Record<string, string[]> = {
   "/retain/predictions": ["Retain Sense", "Predições de Churn"],
   "/retain/root-causes": ["Retain Sense", "Causas Raiz"],
   "/retain/roi": ["Retain Sense", "Simulador ROI"],
+  "/retain/revenue": ["Retain Sense", "Revenue Analytics"],
+  "/retain/renewals": ["Retain Sense", "Renovações"],
   "/retain/customers": ["Retain Sense", "Empresas"],
+  "/retain/voz-do-cliente": ["Retain Sense", "Voz do Cliente"],
   "/retain/upload": ["Retain Sense", "Upload de Dados"],
   "/obtain": ["Obtain Sense", "Dashboard Executivo"],
   "/obtain/leads": ["Obtain Sense", "Lead Scoring"],
@@ -50,6 +54,7 @@ export default function Header() {
 
       {/* Right side */}
       <div className="flex items-center gap-3">
+        <AlertBadge />
         {/* Avatar */}
         <div className="relative">
           <button

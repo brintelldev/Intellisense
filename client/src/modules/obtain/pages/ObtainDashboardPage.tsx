@@ -1,13 +1,16 @@
+import { useState } from "react";
 import { useLocation } from "wouter";
 import { MetricCard } from "../../../shared/components/MetricCard";
 import { FunnelChart } from "../../../shared/components/FunnelChart";
 import { QuadrantMatrix } from "../../../shared/components/QuadrantMatrix";
 import { LeadQualityAreaChart } from "../components/LeadQualityAreaChart";
 import { ICPDistributionDonut } from "../components/ICPDistributionDonut";
+import { LeadPrioritiesCard } from "../components/LeadPrioritiesCard";
+import { LeadDetailDrawer } from "../components/LeadDetailDrawer";
 import { EmptyState } from "../../../shared/components/EmptyState";
 import { DataFreshnessIndicator } from "../../../shared/components/DataFreshnessIndicator";
 import { LoadingState } from "../../../shared/components/LoadingState";
-import { useObtainDashboard, useObtainCampaigns, useObtainFunnel, useObtainICPClusters, useLeadQualityTrend, useObtainDataFreshness } from "../../../shared/hooks/useObtain";
+import { useObtainDashboard, useObtainCampaigns, useObtainFunnel, useObtainICPClusters, useLeadQualityTrend, useObtainDataFreshness, useObtainLeadPriorities } from "../../../shared/hooks/useObtain";
 import { fmtBRLShort as fmtBRL } from "../../../shared/lib/format";
 
 export default function ObtainDashboardPage() {
@@ -17,7 +20,9 @@ export default function ObtainDashboardPage() {
   const { data: apiClusters } = useObtainICPClusters();
   const { data: apiLeadQuality } = useLeadQualityTrend();
   const { data: freshness } = useObtainDataFreshness();
+  const { data: leadPriorities } = useObtainLeadPriorities();
   const [, navigate] = useLocation();
+  const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
 
   if (loadingDash || loadingCampaigns || loadingFunnel) return <LoadingState rows={8} />;
 
@@ -53,6 +58,14 @@ export default function ObtainDashboardPage() {
         </div>
       </div>
 
+      {/* Lead Priorities */}
+      {leadPriorities?.priorities?.length > 0 && (
+        <LeadPrioritiesCard
+          data={leadPriorities}
+          onSelectLead={(id) => setSelectedLeadId(id)}
+        />
+      )}
+
       {/* KPIs */}
       <div className="grid grid-cols-5 gap-4">
         <MetricCard variant="obtain"
@@ -79,7 +92,7 @@ export default function ObtainDashboardPage() {
         <MetricCard variant="obtain"
           icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
           label="Tempo Médio Aquisição"
-          value={`${kpis.avgAcquisitionDays} dias`}
+          value={kpis.avgAcquisitionDays != null ? `${kpis.avgAcquisitionDays} dias` : "—"}
           change={kpis.avgAcquisitionDaysChange}
           changeIsGood={false}
         />
@@ -103,8 +116,8 @@ export default function ObtainDashboardPage() {
             xMid={6}
             yMid={450}
             quadrantLabels={["Atenção", "Avaliar", "Escalar", "Interromper"]}
-            formatX={(v) => `R$${v}K`}
-            formatY={(v) => `R$${v}K`}
+            formatX={(v) => `R$${parseFloat(v.toFixed(1))}K`}
+            formatY={(v) => `R$${parseFloat(v.toFixed(0))}K`}
           />
         </div>
         <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-100">
@@ -120,6 +133,13 @@ export default function ObtainDashboardPage() {
         <LeadQualityAreaChart data={apiLeadQuality ?? []} />
         <ICPDistributionDonut clusters={apiClusters ?? []} />
       </div>
+
+      {selectedLeadId && (
+        <LeadDetailDrawer
+          lead={{ id: selectedLeadId } as any}
+          onClose={() => setSelectedLeadId(null)}
+        />
+      )}
     </div>
   );
 }

@@ -8,6 +8,7 @@ import { LoadingState } from "../../../shared/components/LoadingState";
 import {
   useRetainPrediction, useCreateRetainAction,
   useCustomerScoreHistory, useCustomerNotes, useAddCustomerNote,
+  useMarkCustomerChurned,
 } from "../../../shared/hooks/useRetain";
 import { fmtBRL } from "../../../shared/lib/format";
 import { Customer } from "../../../shared/types";
@@ -32,15 +33,18 @@ export function PredictionDetailDrawer({ customer, onClose }: Props) {
   const [retentionActionDone, setRetentionActionDone] = useState(false);
   const [noteType, setNoteType] = useState("note");
   const [noteContent, setNoteContent] = useState("");
+  const [shapOpen, setShapOpen] = useState(false);
   const { data: apiPrediction, isLoading } = useRetainPrediction(customer?.id ?? null);
   const { data: scoreHistory } = useCustomerScoreHistory(customer?.id ?? null);
   const { data: notes } = useCustomerNotes(customer?.id ?? null);
   const addNote = useAddCustomerNote();
   const createAction = useCreateRetainAction();
+  const markChurned = useMarkCustomerChurned();
 
   useEffect(() => {
     setRetentionActionDone(false);
     setNoteContent("");
+    setShapOpen(false);
   }, [customer?.id]);
 
   if (!customer) return null;
@@ -59,9 +63,69 @@ export function PredictionDetailDrawer({ customer, onClose }: Props) {
             <RiskBadge level={customer.riskLevel} />
           </div>
           <p className="text-sm text-slate-500">
-            {customer.customerCode} · {customer.segment} · {customer.city}/{customer.state}
+            {customer.customerCode} · {customer.segment}{customer.city || customer.state ? ` · ${[customer.city, customer.state].filter(Boolean).join("/")}` : ""}
           </p>
         </div>
+
+        {/* Intelligence Brief */}
+        {prediction?.narrative && (
+          <div className="bg-[#293b83]/5 border border-[#293b83]/15 rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <svg className="w-4 h-4 text-[#293b83]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <span className="text-xs font-semibold text-[#293b83] uppercase tracking-wide">Briefing de Inteligência</span>
+            </div>
+            <p className="text-sm text-slate-700 leading-relaxed">{prediction.narrative}</p>
+          </div>
+        )}
+
+        {/* Segment Benchmark */}
+        {prediction?.segmentBenchmark && (
+          <div className="bg-slate-50 rounded-xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="font-semibold text-slate-700 text-sm">Benchmark do Segmento</h4>
+              {prediction.peerRiskCount > 0 && (
+                <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                  +{prediction.peerRiskCount} outros em risco neste segmento
+                </span>
+              )}
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
+                <span>Este cliente: <strong className="text-slate-700">{prediction.segmentBenchmark.customerHealth}</strong></span>
+                <span>Média do segmento: <strong className="text-slate-700">{prediction.segmentBenchmark.segmentAvgHealth}</strong></span>
+              </div>
+              {/* Two bars */}
+              <div className="space-y-1.5">
+                <div>
+                  <div className="flex justify-between text-[10px] text-slate-400 mb-0.5">
+                    <span>{prediction.segmentBenchmark.segmentName}</span>
+                    <span>{prediction.segmentBenchmark.segmentAvgHealth}/100</span>
+                  </div>
+                  <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+                    <div className="h-full bg-slate-400 rounded-full" style={{ width: `${prediction.segmentBenchmark.segmentAvgHealth}%` }} />
+                  </div>
+                </div>
+                <div>
+                  <div className="flex justify-between text-[10px] text-slate-400 mb-0.5">
+                    <span>{customer.name.split(" ")[0]}</span>
+                    <span>{prediction.segmentBenchmark.customerHealth}/100</span>
+                  </div>
+                  <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${prediction.segmentBenchmark.percentDiff < -10 ? "bg-red-500" : prediction.segmentBenchmark.percentDiff < 0 ? "bg-amber-500" : "bg-emerald-500"}`}
+                      style={{ width: `${prediction.segmentBenchmark.customerHealth}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+              <p className={`text-xs font-medium ${prediction.segmentBenchmark.percentDiff < 0 ? "text-red-600" : "text-green-600"}`}>
+                {prediction.segmentBenchmark.percentDiff < 0 ? `${Math.abs(prediction.segmentBenchmark.percentDiff)}% abaixo da média do segmento` : `${prediction.segmentBenchmark.percentDiff}% acima da média do segmento`}
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Score cards */}
         <div className="grid grid-cols-3 gap-3">
@@ -80,16 +144,28 @@ export function PredictionDetailDrawer({ customer, onClose }: Props) {
           </div>
         </div>
 
-        {/* SHAP Waterfall */}
+        {/* SHAP Waterfall - collapsible */}
         {prediction && (
-          <div className="bg-slate-50 rounded-xl p-4">
-            <h4 className="font-semibold text-slate-700 mb-4 text-sm">Fatores que influenciam a predição</h4>
-            <ShapWaterfall
-              factors={prediction.shapValues}
-              baseProbability={prediction.baseProbability}
-              finalProbability={prediction.churnProbability}
-              variant="retain"
-            />
+          <div className="bg-slate-50 rounded-xl overflow-hidden">
+            <button
+              onClick={() => setShapOpen(!shapOpen)}
+              className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition-colors"
+            >
+              <span>Análise SHAP Detalhada</span>
+              <svg className={`w-4 h-4 text-slate-400 transition-transform ${shapOpen ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {shapOpen && (
+              <div className="px-4 pb-4">
+                <ShapWaterfall
+                  factors={prediction.shapValues}
+                  baseProbability={prediction.baseProbability}
+                  finalProbability={prediction.churnProbability}
+                  variant="retain"
+                />
+              </div>
+            )}
           </div>
         )}
 
@@ -116,6 +192,23 @@ export function PredictionDetailDrawer({ customer, onClose }: Props) {
             {retentionActionDone && (
               <p className="text-sm text-[#293b83] mt-2 font-medium">✓ Ação de Retenção Registrada: Contrato revisado</p>
             )}
+          </div>
+        )}
+
+        {/* Churn action — feedback loop trigger */}
+        {customer.status !== "churned" && (
+          <div className="border border-red-200 rounded-xl p-4 bg-red-50/40">
+            <h4 className="font-semibold text-red-700 text-sm mb-2">Confirmar Churn</h4>
+            <p className="text-xs text-slate-600 mb-3">
+              Marcar este cliente como churned atualiza automaticamente os clusters ICP do Obtain Sense.
+            </p>
+            <button
+              onClick={() => { markChurned.mutate(customer.id); onClose(); }}
+              disabled={markChurned.isPending}
+              className="h-9 px-4 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+            >
+              {markChurned.isPending ? "Processando..." : "Marcar como Churned → Recalcular ICP"}
+            </button>
           </div>
         )}
 
@@ -189,7 +282,7 @@ export function PredictionDetailDrawer({ customer, onClose }: Props) {
           <h4 className="font-semibold text-slate-700 text-sm mb-3">Informações do Cliente</h4>
           <div className="grid grid-cols-2 gap-3">
             {[
-              { label: "Cidade/UF", value: `${customer.city}/${customer.state}` },
+              { label: "Cidade/UF", value: customer.city && customer.state ? `${customer.city}/${customer.state}` : customer.city || customer.state || "—" },
               { label: "Tempo de Parceria", value: `${Math.round((customer.tenureDays ?? 0) / 30)} meses` },
               { label: "Utilização de Equipamentos", value: `${customer.usageIntensity ?? "—"}%` },
               { label: "NPS", value: (customer as any).nps != null ? String((customer as any).nps) : "—" },

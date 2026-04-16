@@ -224,9 +224,9 @@ export function calcLeadScore(
 export function classifyScoreTier(
   score: number,
 ): "hot" | "warm" | "cold" | "disqualified" {
-  if (score >= 75) return "hot";
-  if (score >= 50) return "warm";
-  if (score >= 25) return "cold";
+  if (score >= 65) return "hot";
+  if (score >= 40) return "warm";
+  if (score >= 20) return "cold";
   return "disqualified";
 }
 
@@ -536,4 +536,77 @@ export async function generateObtainAlerts(tenantId: string): Promise<{
   }
 
   return { alertsGenerated };
+}
+
+// ─── Lead Narrative ──────────────────────────────────────────────────────────
+
+const SOURCE_LABELS: Record<string, string> = {
+  referral: "Indicação de Clientes",
+  event: "Feira/Evento",
+  paid_social: "LinkedIn Ads",
+  paid_search: "Google Ads",
+  outbound: "Prospecção Outbound",
+  organic: "Orgânico/SEO",
+  email: "Email Marketing",
+  csv: "CSV Import",
+  manual: "Manual",
+  other: "Outros",
+};
+
+export function generateLeadNarrative(
+  lead: {
+    name: string;
+    company?: string | null;
+    industry?: string | null;
+    companySize?: string | null;
+    source?: string | null;
+    score?: number;
+    scoreTier?: string | null;
+    ltvPrediction?: number;
+    conversionProbability?: number;
+  },
+  shapValues: ShapValue[],
+  icpCluster: string | null,
+  similarCustomers: { count: number; avgHealthScore: number; avgRevenue: number } | null,
+): string {
+  const tierLabel: Record<string, string> = {
+    hot: "alta prioridade",
+    warm: "média prioridade",
+    cold: "baixa prioridade",
+    disqualified: "desqualificado",
+  };
+
+  const positiveFactors = shapValues
+    .filter(s => s.direction === "positive")
+    .slice(0, 2)
+    .map(s => s.label.toLowerCase());
+
+  const company = lead.company ? ` (${lead.company})` : "";
+  const tier = lead.scoreTier ?? "cold";
+  const tierDesc = tierLabel[tier] ?? tier;
+  const ltv = lead.ltvPrediction ?? 0;
+  const convPct = Math.round((lead.conversionProbability ?? 0) * 100);
+  const sourceLabel = SOURCE_LABELS[lead.source ?? "other"] ?? "Origem desconhecida";
+
+  let sentence1 = `${lead.name}${company} é um lead de ${tierDesc} com score ${lead.score ?? 0}/100 e probabilidade de conversão estimada em ${convPct}%.`;
+
+  let sentence2 = "";
+  if (positiveFactors.length >= 2) {
+    sentence2 = ` Os fatores mais positivos são ${positiveFactors[0]} e ${positiveFactors[1]}.`;
+  } else if (positiveFactors.length === 1) {
+    sentence2 = ` O principal fator positivo é ${positiveFactors[0]}.`;
+  }
+
+  if (icpCluster) {
+    sentence2 += ` Perfil alinhado ao cluster: ${icpCluster}.`;
+  }
+
+  let sentence3 = "";
+  if (similarCustomers && similarCustomers.count > 0) {
+    sentence3 = ` Temos ${similarCustomers.count} cliente${similarCustomers.count > 1 ? "s" : ""} ativos neste segmento com Health Score médio de ${Math.round(similarCustomers.avgHealthScore)} e receita média de R$${Math.round(similarCustomers.avgRevenue).toLocaleString("pt-BR")}/mês — origem: ${sourceLabel}.`;
+  } else {
+    sentence3 = ` LTV estimado: R$${Math.round(ltv).toLocaleString("pt-BR")} — origem: ${sourceLabel}.`;
+  }
+
+  return `${sentence1}${sentence2}${sentence3}`.trim();
 }

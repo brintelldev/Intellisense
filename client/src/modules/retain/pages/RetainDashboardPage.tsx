@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useLocation } from "wouter";
 import { MetricCard } from "../../../shared/components/MetricCard";
 import { ChurnTrendChart } from "../components/ChurnTrendChart";
@@ -5,10 +6,11 @@ import { RiskDistributionDonut } from "../components/RiskDistributionDonut";
 import { RevenueBySegmentBar } from "../components/RevenueBySegmentBar";
 import { HealthScoreGauge } from "../components/HealthScoreGauge";
 import { AlertsList } from "../components/AlertsList";
+import { ActionPrioritiesCard } from "../components/ActionPrioritiesCard";
 import { EmptyState } from "../../../shared/components/EmptyState";
 import { DataFreshnessIndicator } from "../../../shared/components/DataFreshnessIndicator";
 import { LoadingState } from "../../../shared/components/LoadingState";
-import { useRetainDashboard, useRetainDataFreshness, useRetainAlerts, useRetainRevenueBySegment, useRetainAnalyticsTrend, useRetainRenewals } from "../../../shared/hooks/useRetain";
+import { useRetainDashboard, useRetainDataFreshness, useRetainAlerts, useRetainRevenueBySegment, useRetainAnalyticsTrend, useRetainRenewals, useRetainActionPriorities } from "../../../shared/hooks/useRetain";
 import { fmtBRLShort as fmtBRL } from "../../../shared/lib/format";
 
 export default function RetainDashboardPage() {
@@ -18,7 +20,9 @@ export default function RetainDashboardPage() {
   const { data: revenueBySegment } = useRetainRevenueBySegment();
   const { data: analyticsTrend } = useRetainAnalyticsTrend();
   const { data: renewalsData } = useRetainRenewals();
+  const { data: actionPriorities } = useRetainActionPriorities();
   const [, navigate] = useLocation();
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
 
   if (isLoading) return <LoadingState rows={8} />;
 
@@ -49,6 +53,14 @@ export default function RetainDashboardPage() {
           <DataFreshnessIndicator lastUploadAt={freshness?.lastUploadAt ?? null} totalRecords={freshness?.totalRecords} />
         </div>
       </div>
+
+      {/* Action Priorities */}
+      {actionPriorities?.priorities?.length > 0 && (
+        <ActionPrioritiesCard
+          data={actionPriorities}
+          onSelectCustomer={(id) => navigate(`/retain/predictions`)}
+        />
+      )}
 
       {/* KPIs */}
       <div className="grid grid-cols-4 gap-4">
@@ -89,7 +101,7 @@ export default function RetainDashboardPage() {
       {/* Charts row 1 */}
       <div className="grid grid-cols-2 gap-6">
         <ChurnTrendChart data={analyticsTrend ?? []} />
-        <RiskDistributionDonut data={apiData?.riskDistribution ?? { low: 0, medium: 0, high: 0, critical: 0 }} />
+        <RiskDistributionDonut data={apiData?.kpis?.riskDistribution ?? { low: 0, medium: 0, high: 0, critical: 0 }} />
       </div>
 
       {/* Charts row 2 */}

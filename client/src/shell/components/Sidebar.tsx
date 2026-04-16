@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import {
-  LayoutDashboard, Shield, BrainCircuit, SearchCode, Calculator, Users, Upload,
+  LayoutDashboard, Shield, BrainCircuit, SearchCode, Users, Upload,
   TrendingUp, Target, Fingerprint, GitBranch, DollarSign, Settings, LogOut,
-  ChevronLeft, ChevronRight, BarChart3,
+  ChevronLeft, ChevronRight, BarChart3, MessageSquareHeart,
 } from "lucide-react";
 import { useAuthContext } from "../contexts/AuthContext";
 import { useLogout } from "../../shared/hooks/useAuth";
@@ -13,8 +13,8 @@ const RETAIN_ITEMS = [
   { icon: BrainCircuit, label: "Predições de Churn", path: "/retain/predictions" },
   { icon: SearchCode, label: "Causas Raiz", path: "/retain/root-causes" },
   { icon: BarChart3, label: "Revenue Analytics", path: "/retain/revenue" },
-  { icon: Calculator, label: "Simulador ROI", path: "/retain/roi" },
-  { icon: Users, label: "Clientes", path: "/retain/customers" },
+  { icon: Users, label: "Empresas", path: "/retain/customers" },
+  { icon: MessageSquareHeart, label: "Voz do Cliente", path: "/retain/voz-do-cliente" },
   { icon: Upload, label: "Upload de Dados", path: "/retain/upload" },
 ];
 
@@ -24,7 +24,6 @@ const OBTAIN_ITEMS = [
   { icon: Fingerprint, label: "ICP & Lookalike", path: "/obtain/icp" },
   { icon: GitBranch, label: "Funil & Gargalos", path: "/obtain/funnel" },
   { icon: DollarSign, label: "CAC vs LTV", path: "/obtain/cac-ltv" },
-  { icon: Calculator, label: "Simulador ROI", path: "/obtain/roi" },
   { icon: Upload, label: "Upload de Dados", path: "/obtain/upload" },
 ];
 

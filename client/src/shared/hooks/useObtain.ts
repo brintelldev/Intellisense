@@ -145,6 +145,24 @@ export function useLeadQualityTrend() {
   });
 }
 
+// ─── Source LTV (for LifecyclePage chart) ───────────────────────────────────
+export function useLifecycleSourceLtv() {
+  return useQuery({
+    queryKey: ["obtain", "source-ltv"],
+    queryFn: () => api.get<{ source: string; ltv: number; leadCount: number }[]>("/obtain/source-ltv"),
+    staleTime: 120_000,
+  });
+}
+
+// ─── Lead Priorities ─────────────────────────────────────────────────────────
+export function useObtainLeadPriorities() {
+  return useQuery({
+    queryKey: ["obtain", "lead-priorities"],
+    queryFn: () => api.get<any>("/obtain/lead-priorities"),
+    staleTime: 30_000,
+  });
+}
+
 // ─── Suggest Mapping ────────────────────────────────────────────────────────
 export function useSuggestObtainMapping() {
   return useMutation({

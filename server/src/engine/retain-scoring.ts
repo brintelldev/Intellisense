@@ -98,8 +98,8 @@ function linearNormalize(value: number, max: number): number {
   return Math.min(Math.max(value / max, 0), 1);
 }
 
-function normalizeDimension(value: number | null, meta: DimMeta): number {
-  if (value == null) return 0.5; // neutral if missing
+function normalizeDimension(value: number | null, meta: DimMeta): number | null {
+  if (value == null) return null; // missing — caller redistributes weight
 
   let normalized: number;
   if (meta.useSigmoid && meta.sigmoidMid != null && meta.sigmoidK != null) {
@@ -125,11 +125,15 @@ export function calcHealthScore(
     if (weight <= 0) continue;
 
     const normalized = normalizeDimension(dims[meta.key] ?? null, meta);
+    // Skip null dimensions — their weight is redistributed proportionally
+    // to present dimensions (totalWeight only accumulates for non-null dims)
+    if (normalized === null) continue;
+
     weightedSum += normalized * weight;
     totalWeight += weight;
   }
 
-  if (totalWeight === 0) return 50; // neutral if no dimensions
+  if (totalWeight === 0) return 50; // neutral if no dimensions at all
 
   const score = (weightedSum / totalWeight) * 100;
   return Math.round(Math.min(Math.max(score, 0), 100));
@@ -192,9 +196,9 @@ export function generateShapValues(
     const neutral = 0.5;
 
     // Impact: how much this dimension pushes the score away from neutral
-    // Positive impact = helps the score (dimension is performing well)
-    // Negative impact = hurts the score (dimension is performing poorly)
-    const impact = ((normalized - neutral) * weight / totalWeight) * 100;
+    // Missing dimensions (null) have zero impact — not rated
+    const normalizedValue = normalized ?? neutral; // use neutral for SHAP display when missing
+    const impact = ((normalizedValue - neutral) * weight / totalWeight) * 100;
 
     shapValues.push({
       feature: meta.key,
@@ -605,4 +609,66 @@ export async function generateAlerts(tenantId: string): Promise<{
   }
 
   return { alertsGenerated };
+}
+
+export function generateCustomerNarrative(
+  customer: {
+    name: string;
+    segment?: string | null;
+    dimRevenue?: number | null;
+    healthScore?: number | null;
+    churnProbability?: number | null;
+    riskLevel?: string | null;
+    dimContractRemainingDays?: number | null;
+  },
+  shapValues: ShapValue[],
+  scoreTrend: { direction: "declining" | "stable" | "improving"; delta: number; weeksAnalyzed: number },
+): string {
+  const factorDescriptions: Record<string, string> = {
+    dimUsageIntensity: "queda significativa no engajamento com o produto",
+    dimPaymentRegularity: "irregularidade nos pagamentos recentes",
+    dimSatisfaction: "insatisfação do cliente (NPS em queda)",
+    dimContractRemainingDays: "proximidade do vencimento do contrato",
+    dimSupportVolume: "volume elevado de chamados de suporte",
+    dimRecencyDays: "ausência prolongada de interação com a equipe",
+    dimInteractionFrequency: "baixa frequência de interações",
+    dimTenureDays: "relacionamento ainda em fase inicial",
+  };
+
+  const negativeFactors = shapValues
+    .filter(s => s.direction === "negative")
+    .slice(0, 2)
+    .map(s => factorDescriptions[s.feature] ?? s.label.toLowerCase());
+
+  const churnPct = Math.round((customer.churnProbability ?? 0) * 100);
+  const healthScore = customer.healthScore ?? 0;
+  const segment = customer.segment ? ` (${customer.segment})` : "";
+
+  let sentence1 = "";
+  if (scoreTrend.direction === "declining") {
+    sentence1 = `${customer.name}${segment} apresenta saúde em queda — score caiu ${Math.abs(scoreTrend.delta)} pontos nas últimas ${scoreTrend.weeksAnalyzed} semanas, com probabilidade de churn em ${churnPct}%.`;
+  } else if (scoreTrend.direction === "improving") {
+    sentence1 = `${customer.name}${segment} mostra sinais de melhora — score subiu ${Math.abs(scoreTrend.delta)} pontos recentemente, mas a probabilidade de churn ainda está em ${churnPct}%.`;
+  } else {
+    sentence1 = `${customer.name}${segment} mantém score estável em ${healthScore} pontos, mas a probabilidade de churn preocupante está em ${churnPct}%.`;
+  }
+
+  let sentence2 = "";
+  if (negativeFactors.length >= 2) {
+    sentence2 = `Os principais fatores de risco são: ${negativeFactors[0]} e ${negativeFactors[1]}.`;
+  } else if (negativeFactors.length === 1) {
+    sentence2 = `O principal fator de risco identificado é ${negativeFactors[0]}.`;
+  } else {
+    sentence2 = "Nenhum fator de risco dominante identificado — monitoramento preventivo recomendado.";
+  }
+
+  let sentence3 = "";
+  if (customer.dimContractRemainingDays != null && customer.dimContractRemainingDays < 60 && customer.dimContractRemainingDays > 0) {
+    sentence3 = ` O contrato vence em ${customer.dimContractRemainingDays} dias — intervenção imediata pode preservar ${customer.dimRevenue ? `R$${Math.round(customer.dimRevenue).toLocaleString("pt-BR")}/mês` : "receita recorrente"}.`;
+  } else if (customer.dimRevenue && customer.dimRevenue > 0) {
+    const riskWord = customer.riskLevel === "critical" ? "em risco crítico" : "em atenção";
+    sentence3 = ` Receita ${riskWord}: R$${Math.round(customer.dimRevenue).toLocaleString("pt-BR")}/mês.`;
+  }
+
+  return `${sentence1} ${sentence2}${sentence3}`.trim();
 }

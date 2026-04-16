@@ -15,9 +15,18 @@ import {
   generateAnalyticsSnapshot,
   generateChurnCauses,
   generateAlerts,
+  generateCustomerNarrative,
 } from "../../engine/retain-scoring.js";
 import { generateIcpClusters } from "../../engine/icp-clustering.js";
 import { suggestMapping } from "../../engine/column-mapper.js";
+import { readCsvFile, readCsvSample } from "../../lib/csv-reader.js";
+import {
+  parseNumber,
+  buildSatisfactionNormalizer,
+  parseDate,
+  daysFromToday,
+  type NpsScale,
+} from "../../lib/value-normalizer.js";
 
 export const retainRouter = Router();
 // Use diskStorage to avoid loading CSV files into Node heap memory
@@ -116,6 +125,105 @@ retainRouter.get("/dashboard", async (req, res) => {
   }
 });
 
+// ─── GET /action-priorities ──────────────────────────────────────────────────
+retainRouter.get("/action-priorities", async (req, res) => {
+  try {
+    const tenantId = req.tenantId!;
+
+    // Top 5 customers by revenue × churnProbability (expected revenue loss)
+    const topCustomers = await db.select({
+      customer: customers,
+      prediction: retainPredictions,
+    }).from(customers)
+      .innerJoin(retainPredictions, and(
+        eq(retainPredictions.customerId, customers.id),
+        eq(retainPredictions.isActive, true),
+      ))
+      .where(and(
+        eq(customers.tenantId, tenantId),
+        sql`${customers.riskLevel} IN ('critical', 'high')`,
+      ))
+      .orderBy(sql`${customers.dimRevenue} * ${customers.churnProbability} DESC NULLS LAST`)
+      .limit(5);
+
+    // Score trends (last 4 weeks) for each
+    const fourWeeksAgo = new Date();
+    fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28);
+    const dateStr = fourWeeksAgo.toISOString().split("T")[0];
+
+    const priorities = await Promise.all(topCustomers.map(async (r) => {
+      const history = await db.select()
+        .from(customerScoreHistory)
+        .where(and(
+          eq(customerScoreHistory.tenantId, tenantId),
+          eq(customerScoreHistory.customerId, r.customer.id),
+          sql`${customerScoreHistory.snapshotDate} >= ${dateStr}`,
+        ))
+        .orderBy(asc(customerScoreHistory.snapshotDate))
+        .limit(28);
+
+      let scoreTrend: { direction: "declining" | "stable" | "improving"; delta: number } = { direction: "stable", delta: 0 };
+      if (history.length >= 2) {
+        const delta = (history[history.length - 1].healthScore ?? 0) - (history[0].healthScore ?? 0);
+        scoreTrend = {
+          direction: delta <= -5 ? "declining" : delta >= 5 ? "improving" : "stable",
+          delta: Math.round(delta),
+        };
+      }
+
+      const shapValues = (r.prediction.shapValues as any[]) ?? [];
+      const topFactor = shapValues.find((s: any) => s.direction === "negative");
+
+      return {
+        customerId: r.customer.id,
+        name: r.customer.name,
+        segment: r.customer.segment,
+        revenue: r.customer.dimRevenue ?? 0,
+        healthScore: r.customer.healthScore ?? 0,
+        churnProbability: r.prediction.churnProbability ?? 0,
+        riskLevel: r.prediction.riskLevel,
+        contractRemainingDays: r.customer.dimContractRemainingDays,
+        topFactor: topFactor ? { label: topFactor.label, impact: topFactor.impact } : null,
+        recommendedAction: r.prediction.recommendedAction,
+        scoreTrend,
+        scoreDelta: scoreTrend.delta,
+      };
+    }));
+
+    // Aggregate stats
+    const totalRevenueAtStake = priorities.reduce((sum, p) => sum + p.revenue * p.churnProbability, 0);
+
+    const [contractsRow] = await db.select({ count: sql<number>`count(*)::int` })
+      .from(customers)
+      .where(and(
+        eq(customers.tenantId, tenantId),
+        sql`${customers.dimContractRemainingDays} < 30`,
+        sql`${customers.dimContractRemainingDays} > 0`,
+        sql`${customers.riskLevel} != 'low'`,
+      ));
+
+    const riskRows = await db.select({
+      riskLevel: customers.riskLevel,
+      count: sql<number>`count(*)::int`,
+    }).from(customers)
+      .where(eq(customers.tenantId, tenantId))
+      .groupBy(customers.riskLevel);
+
+    const riskMap = Object.fromEntries(riskRows.map(r => [r.riskLevel, r.count]));
+
+    res.json({
+      priorities,
+      totalRevenueAtStake: Math.round(totalRevenueAtStake),
+      contractsExpiring30d: contractsRow?.count ?? 0,
+      criticalCount: riskMap["critical"] ?? 0,
+      highCount: riskMap["high"] ?? 0,
+    });
+  } catch (err) {
+    console.error("Retain action priorities error:", err);
+    res.status(500).json({ error: "Erro ao buscar prioridades" });
+  }
+});
+
 // ─── GET /predictions ────────────────────────────────────────────────────────
 retainRouter.get("/predictions", async (req, res) => {
   try {
@@ -188,14 +296,89 @@ retainRouter.get("/predictions/:customerId", async (req, res) => {
 
     if (!row) return res.status(404).json({ error: "Predição não encontrada" });
 
+    // ── Score trend (last 4 weeks) ──
+    const fourWeeksAgo = new Date();
+    fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28);
+    const scoreHistory = await db.select()
+      .from(customerScoreHistory)
+      .where(and(
+        eq(customerScoreHistory.tenantId, tenantId),
+        eq(customerScoreHistory.customerId, customerId),
+        sql`${customerScoreHistory.snapshotDate} >= ${fourWeeksAgo.toISOString().split("T")[0]}`,
+      ))
+      .orderBy(asc(customerScoreHistory.snapshotDate))
+      .limit(28);
+
+    let scoreTrend: { direction: "declining" | "stable" | "improving"; delta: number; weeksAnalyzed: number } = { direction: "stable", delta: 0, weeksAnalyzed: 0 };
+    if (scoreHistory.length >= 2) {
+      const oldest = scoreHistory[0].healthScore ?? 0;
+      const newest = scoreHistory[scoreHistory.length - 1].healthScore ?? 0;
+      const delta = newest - oldest;
+      scoreTrend = {
+        direction: delta <= -5 ? "declining" : delta >= 5 ? "improving" : "stable",
+        delta: Math.round(delta),
+        weeksAnalyzed: Math.ceil(scoreHistory.length / 7),
+      };
+    }
+
+    // ── Segment benchmark ──
+    const segment = row.customer.segment;
+    let segmentBenchmark = null;
+    if (segment) {
+      const [segAvg] = await db.select({
+        segmentAvgHealth: sql<number>`coalesce(avg(${customers.healthScore}), 50)::real`,
+        segmentCount: sql<number>`count(*)::int`,
+      }).from(customers)
+        .where(and(eq(customers.tenantId, tenantId), eq(customers.segment, segment)));
+
+      const customerHealth = row.customer.healthScore ?? 0;
+      const segAvgHealth = Math.round(segAvg?.segmentAvgHealth ?? 50);
+      const percentDiff = segAvgHealth > 0
+        ? Math.round(((customerHealth - segAvgHealth) / segAvgHealth) * 100)
+        : 0;
+
+      segmentBenchmark = { segmentName: segment, segmentAvgHealth: segAvgHealth, customerHealth, percentDiff };
+    }
+
+    // ── Peer risk count ──
+    const [peerRisk] = await db.select({ count: sql<number>`count(*)::int` })
+      .from(customers)
+      .where(and(
+        eq(customers.tenantId, tenantId),
+        segment ? eq(customers.segment, segment) : sql`1=1`,
+        sql`${customers.riskLevel} IN ('high', 'critical')`,
+        sql`${customers.id} != ${customerId}`,
+      ));
+    const peerRiskCount = peerRisk?.count ?? 0;
+
+    // ── Narrative ──
+    const shapValues = (row.prediction.shapValues as any[]) ?? [];
+    const narrative = generateCustomerNarrative(
+      {
+        name: row.customer.name,
+        segment: row.customer.segment,
+        dimRevenue: row.customer.dimRevenue,
+        healthScore: row.customer.healthScore,
+        churnProbability: row.prediction.churnProbability,
+        riskLevel: row.prediction.riskLevel,
+        dimContractRemainingDays: row.customer.dimContractRemainingDays,
+      },
+      shapValues,
+      scoreTrend,
+    );
+
     res.json({
       ...mapCustomerToDto(row.customer),
       churnProbability: row.prediction.churnProbability,
       riskLevel: row.prediction.riskLevel,
       confidence: row.prediction.confidence,
-      shapValues: row.prediction.shapValues,
+      shapValues,
       baseProbability: 0.15,
       recommendedAction: row.prediction.recommendedAction,
+      narrative,
+      segmentBenchmark,
+      scoreTrend,
+      peerRiskCount,
     });
   } catch (err) {
     console.error("Retain prediction detail error:", err);
@@ -344,8 +527,19 @@ retainRouter.post("/uploads", upload.single("file"), async (req, res) => {
   let uploadRow: typeof retainUploads.$inferSelect | undefined;
   try {
     // Parse mapping sent as JSON string in form field
-    let mapping: Record<string, string> = {};
-    try { mapping = JSON.parse(req.body.mapping ?? "{}"); } catch { /* no mapping */ }
+    let rawMapping: Record<string, string> = {};
+    try { rawMapping = JSON.parse(req.body.mapping ?? "{}"); } catch { /* no mapping */ }
+
+    // Normalize mapping keys: the column mapper returns "dim"-prefixed keys
+    // (dimRevenue, dimSatisfaction, etc.) and "customerCode", but the handler
+    // uses bare keys (revenue, satisfaction, id). Normalize both.
+    const MAPPER_KEY_ALIASES: Record<string, string> = { customerCode: "id" };
+    const mapping: Record<string, string> = {};
+    for (const [k, v] of Object.entries(rawMapping)) {
+      let normalized = k.startsWith("dim") ? k.charAt(3).toLowerCase() + k.slice(4) : k;
+      normalized = MAPPER_KEY_ALIASES[normalized] ?? normalized;
+      mapping[normalized] = v;
+    }
 
     const tenantId = req.tenantId!;
 
@@ -353,50 +547,65 @@ retainRouter.post("/uploads", upload.single("file"), async (req, res) => {
       tenantId,
       filename: file.originalname,
       status: "processing",
-      columnMapping: mapping,
+      columnMapping: rawMapping,
       uploadedBy: req.session.userId,
     }).returning();
 
-    // Read and parse CSV
-    const csvText = fs.readFileSync(file.path, "utf-8");
-    const parsed = Papa.parse<Record<string, string>>(csvText, {
-      header: true,
-      skipEmptyLines: true,
-      delimiter: "",  // auto-detect comma vs semicolon
-    });
+    // Read and parse CSV (encoding-aware: UTF-8, Latin-1, Windows-1252)
+    const csvResult = readCsvFile(file.path);
 
-    if (parsed.errors.length > 0 && parsed.data.length === 0) {
+    if (csvResult.errors.length > 0 && csvResult.data.length === 0) {
       await db.update(retainUploads)
-        .set({ status: "failed", errorMessage: parsed.errors[0].message })
+        .set({ status: "failed", errorMessage: csvResult.errors[0].message })
         .where(eq(retainUploads.id, uploadRow.id));
-      return res.status(400).json({ error: "CSV inválido: " + parsed.errors[0].message });
+      return res.status(400).json({ error: "CSV inválido: " + csvResult.errors[0].message });
     }
+
+    const parsed = { data: csvResult.data };
 
     // Helper functions
     const get = (row: Record<string, string>, key: string) => {
       const csvCol = mapping[key];
       return csvCol ? row[csvCol] : undefined;
     };
-    const toFloat = (v: string | undefined) => {
-      if (!v) return null;
-      const n = parseFloat(v.replace(",", "."));
-      return isNaN(n) ? null : n;
-    };
+    // toFloat now handles BR format (R$ 1.234,56 → 1234.56)
+    const toFloat = (v: string | undefined) => parseNumber(v);
     const toInt = (v: string | undefined) => {
-      if (!v) return null;
-      const n = parseInt(v, 10);
-      return isNaN(n) ? null : n;
+      const n = parseNumber(v);
+      return n != null ? Math.round(n) : null;
     };
 
-    // Load existing customers for upsert check
+    // Detect NPS scale from the satisfaction column before processing rows
+    const satisfactionColName = mapping["satisfaction"];
+    const rawSatisfactionValues = satisfactionColName
+      ? csvResult.data.map((row) => row[satisfactionColName])
+      : [];
+    const { scale: satisfactionScale, normalize: normalizeSatisfaction } =
+      buildSatisfactionNormalizer(rawSatisfactionValues);
+
+    // Detect if there's a date column for contractRemainingDays
+    const contractDateColName = mapping["contractRemainingDays"];
+    const hasDateValues = contractDateColName
+      ? csvResult.data.some((row) => {
+          const v = row[contractDateColName];
+          return v != null && /\d{1,4}[\/\-]\d{1,2}[\/\-]\d{1,4}/.test(v.trim());
+        })
+      : false;
+
+    // Load existing customers for upsert check (match by code or email)
     const existingCustomers = await db
-      .select({ id: customers.id, customerCode: customers.customerCode })
+      .select({ id: customers.id, customerCode: customers.customerCode, email: customers.email })
       .from(customers)
       .where(eq(customers.tenantId, tenantId));
     const existingByCode = new Map(
       existingCustomers
         .filter((c) => c.customerCode)
         .map((c) => [c.customerCode!, c.id]),
+    );
+    const existingByEmail = new Map(
+      existingCustomers
+        .filter((c) => c.email)
+        .map((c) => [c.email!.toLowerCase(), c.id]),
     );
 
     let rowsCreated = 0;
@@ -417,6 +626,24 @@ retainRouter.post("/uploads", upload.single("file"), async (req, res) => {
 
         const customerCode = get(row, "id") ?? undefined;
 
+        // Normalize satisfaction to 0-100 (handles NPS 0-10, Likert 1-5, percent 0-100)
+        const rawSatisfactionVal = toFloat(get(row, "satisfaction"));
+        const normalizedSatisfaction = rawSatisfactionVal != null
+          ? normalizeSatisfaction(rawSatisfactionVal)
+          : null;
+
+        // Handle contractRemainingDays: may be a date (DD/MM/YYYY) or a number
+        let contractRemainingDays: number | null = null;
+        const rawContractVal = get(row, "contractRemainingDays");
+        if (rawContractVal) {
+          if (hasDateValues) {
+            const d = parseDate(rawContractVal);
+            contractRemainingDays = d ? daysFromToday(d) : null;
+          } else {
+            contractRemainingDays = toInt(rawContractVal);
+          }
+        }
+
         const customerData = {
           tenantId,
           customerCode,
@@ -431,16 +658,19 @@ retainRouter.post("/uploads", upload.single("file"), async (req, res) => {
           dimTenureDays: toInt(get(row, "tenureDays")),
           dimInteractionFrequency: toFloat(get(row, "interactionFrequency")),
           dimSupportVolume: toFloat(get(row, "supportVolume")),
-          dimSatisfaction: toFloat(get(row, "satisfaction")),
-          dimContractRemainingDays: toInt(get(row, "contractRemainingDays")),
+          dimSatisfaction: normalizedSatisfaction,
+          dimContractRemainingDays: contractRemainingDays,
           dimUsageIntensity: toFloat(get(row, "usageIntensity")),
           dimRecencyDays: toInt(get(row, "recencyDays")),
           rawData: row,
           updatedAt: new Date(),
         };
 
-        // Upsert: check if customer exists by code
-        const existingId = customerCode ? existingByCode.get(customerCode) : undefined;
+        // Upsert: match by customer code first, then email as fallback
+        const customerEmailLower = get(row, "email")?.toLowerCase();
+        const existingId =
+          (customerCode ? existingByCode.get(customerCode) : undefined) ??
+          (customerEmailLower ? existingByEmail.get(customerEmailLower) : undefined);
 
         if (existingId) {
           await db.update(customers)
@@ -451,9 +681,8 @@ retainRouter.post("/uploads", upload.single("file"), async (req, res) => {
           const [inserted] = await db.insert(customers)
             .values({ ...customerData, status: "active" as const })
             .returning({ id: customers.id });
-          if (customerCode) {
-            existingByCode.set(customerCode, inserted.id);
-          }
+          if (customerCode) existingByCode.set(customerCode, inserted.id);
+          if (customerEmailLower) existingByEmail.set(customerEmailLower, inserted.id);
           rowsCreated++;
         }
       } catch (rowErr: any) {
@@ -468,6 +697,106 @@ retainRouter.post("/uploads", upload.single("file"), async (req, res) => {
     await generateChurnCauses(tenantId);
     const { alertsGenerated } = await generateAlerts(tenantId);
     await generateIcpClusters(tenantId); // feedback loop!
+
+    // ── Compute intelligence summary ──────────────────────────────────────
+    const [criticalCustomers, analyticsRows, scoreDropData] = await Promise.all([
+      db.select().from(customers)
+        .where(and(
+          eq(customers.tenantId, tenantId),
+          sql`${customers.riskLevel} IN ('critical', 'high')`,
+        ))
+        .orderBy(desc(customers.dimRevenue))
+        .limit(3),
+      db.select().from(retainAnalytics)
+        .where(eq(retainAnalytics.tenantId, tenantId))
+        .orderBy(desc(retainAnalytics.snapshotDate))
+        .limit(2),
+      db.select({
+        customerId: customerScoreHistory.customerId,
+        score: customerScoreHistory.healthScore,
+        date: customerScoreHistory.snapshotDate,
+      }).from(customerScoreHistory)
+        .where(eq(customerScoreHistory.tenantId, tenantId))
+        .orderBy(desc(customerScoreHistory.snapshotDate))
+        .limit(500),
+    ]);
+
+    // Top priority: highest revenue × churnProbability
+    let topPriority = null;
+    const topCustomerRows = await db.select({
+      customer: customers,
+      prediction: retainPredictions,
+    }).from(customers)
+      .innerJoin(retainPredictions, and(
+        eq(retainPredictions.customerId, customers.id),
+        eq(retainPredictions.isActive, true),
+        eq(retainPredictions.tenantId, tenantId),
+      ))
+      .where(and(
+        eq(customers.tenantId, tenantId),
+        sql`${customers.riskLevel} IN ('critical', 'high')`,
+      ))
+      .orderBy(sql`${customers.dimRevenue} * ${customers.churnProbability} DESC NULLS LAST`)
+      .limit(1);
+
+    if (topCustomerRows.length > 0) {
+      const tp = topCustomerRows[0];
+      const shapVals = (tp.prediction.shapValues as any[]) ?? [];
+      const topFactor = shapVals.find((s: any) => s.direction === "negative");
+      topPriority = {
+        customerId: tp.customer.id,
+        name: tp.customer.name,
+        segment: tp.customer.segment,
+        revenue: tp.customer.dimRevenue ?? 0,
+        churnProbability: tp.prediction.churnProbability ?? 0,
+        riskLevel: tp.prediction.riskLevel,
+        topFactor: topFactor ? { label: topFactor.label, impact: topFactor.impact } : null,
+        recommendedAction: tp.prediction.recommendedAction,
+      };
+    }
+
+    // Delta revenue at risk
+    const deltaRevenueAtRisk = analyticsRows.length >= 2
+      ? (analyticsRows[0].revenueAtRisk ?? 0) - (analyticsRows[1].revenueAtRisk ?? 0)
+      : 0;
+
+    // Score drops > 15 pts (compare latest vs previous snapshot per customer)
+    const byCustomer = new Map<string, number[]>();
+    for (const row of scoreDropData) {
+      if (!byCustomer.has(row.customerId)) byCustomer.set(row.customerId, []);
+      byCustomer.get(row.customerId)!.push(row.score ?? 0);
+    }
+    let scoreDrops = 0;
+    for (const scores of byCustomer.values()) {
+      if (scores.length >= 2 && scores[0] - scores[1] < -15) scoreDrops++;
+    }
+
+    // Contracts expiring in 30d
+    const [contractsRow] = await db.select({ count: sql<number>`count(*)::int` })
+      .from(customers)
+      .where(and(
+        eq(customers.tenantId, tenantId),
+        sql`${customers.dimContractRemainingDays} < 30`,
+        sql`${customers.dimContractRemainingDays} > 0`,
+        sql`${customers.riskLevel} != 'low'`,
+      ));
+
+    const intelligenceSummary = {
+      newCriticalCustomers: criticalCustomers.map(c => ({
+        id: c.id,
+        name: c.name,
+        segment: c.segment,
+        revenue: c.dimRevenue ?? 0,
+        riskLevel: c.riskLevel,
+        churnProbability: c.churnProbability ?? 0,
+        healthScore: c.healthScore ?? 0,
+      })),
+      deltaRevenueAtRisk: Math.round(deltaRevenueAtRisk),
+      topPriority,
+      contractsExpiring30d: contractsRow?.count ?? 0,
+      scoreDrops,
+      totalRevenueAtRisk: analyticsRows[0]?.revenueAtRisk ?? 0,
+    };
 
     // Update upload record with final stats
     const [done] = await db.update(retainUploads)
@@ -486,7 +815,11 @@ retainRouter.post("/uploads", upload.single("file"), async (req, res) => {
       ...done,
       predictionsGenerated,
       alertsGenerated,
-      errors: errors.slice(0, 20), // limit error details
+      intelligenceSummary,
+      errors: errors.slice(0, 20),
+      detectedEncoding: csvResult.detectedEncoding,
+      detectedDelimiter: csvResult.detectedDelimiter,
+      satisfactionScale: satisfactionScale ?? "percent-100",
     });
   } catch (err: any) {
     console.error("Retain upload error:", err);
@@ -509,11 +842,146 @@ retainRouter.post("/upload/suggest-mapping", async (req, res) => {
     if (!headers || !Array.isArray(headers)) {
       return res.status(400).json({ error: "headers é obrigatório (array de strings)" });
     }
+
+    const tenantId = req.tenantId!;
+
+    // Mapping memory: look up the most recent accepted mapping for this tenant
+    const [lastUpload] = await db.select({ columnMapping: retainUploads.columnMapping })
+      .from(retainUploads)
+      .where(and(eq(retainUploads.tenantId, tenantId), eq(retainUploads.status, "completed")))
+      .orderBy(desc(retainUploads.uploadedAt))
+      .limit(1);
+
+    const historicalMapping = (lastUpload?.columnMapping ?? {}) as Record<string, string>;
+    // Invert: { dimKey → csvColumn } → { csvColumn → dimKey }
+    const csvColToDim: Record<string, string> = {};
+    for (const [dimKey, csvCol] of Object.entries(historicalMapping)) {
+      if (csvCol) csvColToDim[csvCol] = dimKey;
+    }
+
     const suggestions = suggestMapping(headers, sampleRows ?? [], "retain");
-    res.json(suggestions);
+
+    // Overlay historical memory: if we've seen this exact CSV column before,
+    // upgrade to high confidence with source = "historical"
+    const enriched = suggestions.map((s) => {
+      const historicalDim = csvColToDim[s.csvColumn];
+      if (historicalDim && (s.suggestedDimension === null || s.confidenceScore < 0.95)) {
+        return {
+          ...s,
+          suggestedDimension: historicalDim,
+          confidenceScore: 0.97,
+          confidence: "high" as const,
+          reason: `Reconhecido por memória do tenant (último upload aceito)`,
+          source: "historical",
+        };
+      }
+      return { ...s, source: "inference" };
+    });
+
+    res.json(enriched);
   } catch (err) {
     console.error("Suggest mapping error:", err);
     res.status(500).json({ error: "Erro ao sugerir mapeamento" });
+  }
+});
+
+// ─── POST /upload/preview ────────────────────────────────────────────────────
+// Receives { mapping, sampleRows } — returns N interpreted rows for human review
+// before the user commits the upload.
+retainRouter.post("/upload/preview", async (req, res) => {
+  try {
+    const { mapping, sampleRows } = req.body as {
+      mapping: Record<string, string>;
+      sampleRows: Record<string, string>[];
+    };
+    if (!mapping || !sampleRows || !Array.isArray(sampleRows)) {
+      return res.status(400).json({ error: "mapping e sampleRows são obrigatórios" });
+    }
+
+    const get = (row: Record<string, string>, key: string) => {
+      const col = mapping[key];
+      return col ? row[col] : undefined;
+    };
+
+    // Detect satisfaction scale from the sample
+    const satisfactionColName = mapping["satisfaction"];
+    const rawSatValues = satisfactionColName
+      ? sampleRows.map((r) => r[satisfactionColName])
+      : [];
+    const { scale: satisfactionScale, normalize: normalizeSatisfaction } =
+      buildSatisfactionNormalizer(rawSatValues);
+
+    // Detect if contractRemainingDays column has date values
+    const contractColName = mapping["contractRemainingDays"];
+    const hasDateValues = contractColName
+      ? sampleRows.some((r) => {
+          const v = r[contractColName];
+          return v != null && /\d{1,4}[\/\-]\d{1,2}[\/\-]\d{1,4}/.test(v.trim());
+        })
+      : false;
+
+    // 9 standard dimensions
+    const ALL_DIMS = [
+      "revenue", "paymentRegularity", "tenureDays", "interactionFrequency",
+      "supportVolume", "satisfaction", "contractRemainingDays", "usageIntensity", "recencyDays",
+    ];
+    const mappedDims = ALL_DIMS.filter((d) => mapping[d]);
+    const missingDimensions = ALL_DIMS.filter((d) => !mapping[d]);
+
+    const previewRows = sampleRows.slice(0, 5).map((row) => {
+      // Satisfaction
+      const rawSat = parseNumber(get(row, "satisfaction"));
+      const normalizedSat = rawSat != null ? normalizeSatisfaction(rawSat) : null;
+      const satLabel = normalizedSat != null
+        ? normalizedSat >= 70 ? `${rawSat} (promotor)` : normalizedSat >= 50 ? `${rawSat} (neutro)` : `${rawSat} (detrator)`
+        : null;
+
+      // Contract remaining days
+      const rawContract = get(row, "contractRemainingDays");
+      let contractDays: number | null = null;
+      let contractLabel: string | null = null;
+      if (rawContract) {
+        if (hasDateValues) {
+          const d = parseDate(rawContract);
+          contractDays = d ? daysFromToday(d) : null;
+          contractLabel = contractDays != null ? `${contractDays} dias (de ${rawContract})` : null;
+        } else {
+          contractDays = parseNumber(rawContract) != null ? Math.round(parseNumber(rawContract)!) : null;
+          contractLabel = contractDays != null ? `${contractDays} dias` : null;
+        }
+      }
+
+      // Revenue
+      const rawRevenue = get(row, "revenue");
+      const revenueVal = parseNumber(rawRevenue);
+      const revenueLabel = revenueVal != null
+        ? `R$ ${revenueVal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`
+        : null;
+
+      return {
+        name: get(row, "name") ?? Object.values(row)[0] ?? "",
+        email: get(row, "email") ?? null,
+        revenue: revenueLabel,
+        satisfaction: satLabel,
+        contractRemainingDays: contractLabel,
+        paymentRegularity: parseNumber(get(row, "paymentRegularity")),
+        supportVolume: parseNumber(get(row, "supportVolume")),
+        usageIntensity: parseNumber(get(row, "usageIntensity")),
+        missingDimensions,
+      };
+    });
+
+    res.json({
+      previewRows,
+      satisfactionScale: satisfactionScale ?? "percent-100",
+      dateFormatDetected: hasDateValues,
+      mappedDimensions: mappedDims.length,
+      totalDimensions: ALL_DIMS.length,
+      missingDimensions,
+    });
+  } catch (err) {
+    console.error("Preview error:", err);
+    res.status(500).json({ error: "Erro ao gerar preview" });
   }
 });
 
@@ -580,7 +1048,7 @@ retainRouter.get("/data-freshness", async (req, res) => {
     const [lastUpload] = await db.select()
       .from(retainUploads)
       .where(and(eq(retainUploads.tenantId, tenantId), eq(retainUploads.status, "completed")))
-      .orderBy(desc(retainUploads.processedAt))
+      .orderBy(sql`${retainUploads.processedAt} DESC NULLS LAST`)
       .limit(1);
 
     const [countRow] = await db.select({ count: sql<number>`count(*)::int` })
@@ -588,7 +1056,7 @@ retainRouter.get("/data-freshness", async (req, res) => {
       .where(eq(customers.tenantId, tenantId));
 
     res.json({
-      lastUploadAt: lastUpload?.processedAt ?? null,
+      lastUploadAt: lastUpload?.processedAt ?? lastUpload?.uploadedAt ?? null,
       lastUploadFilename: lastUpload?.filename ?? null,
       totalRecords: countRow?.count ?? 0,
     });
@@ -758,6 +1226,98 @@ retainRouter.get("/revenue-analytics", async (req, res) => {
   }
 });
 
+// ─── GET /expansion-opportunities ────────────────────────────────────────────
+retainRouter.get("/expansion-opportunities", async (req, res) => {
+  try {
+    const tenantId = req.tenantId!;
+
+    // Healthy customers (health > 65) whose revenue is below their segment's median
+    const rows = await db.execute(sql`
+      WITH segment_medians AS (
+        SELECT segment,
+               PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY dim_revenue) AS median_revenue,
+               AVG(dim_revenue) AS avg_revenue
+        FROM customers
+        WHERE tenant_id = ${tenantId}
+          AND status != 'churned'
+          AND dim_revenue IS NOT NULL
+        GROUP BY segment
+      )
+      SELECT
+        c.id, c.name, c.segment, c.health_score, c.dim_revenue, c.risk_level,
+        sm.median_revenue,
+        GREATEST(0, sm.median_revenue - c.dim_revenue) AS gap,
+        GREATEST(0, sm.median_revenue - c.dim_revenue) * 12 AS annual_potential
+      FROM customers c
+      JOIN segment_medians sm ON sm.segment = c.segment
+      WHERE c.tenant_id = ${tenantId}
+        AND c.status != 'churned'
+        AND c.health_score > 55
+        AND c.dim_revenue < sm.median_revenue * 0.92
+      ORDER BY annual_potential DESC
+      LIMIT 20
+    `);
+
+    const opportunities = (rows.rows as any[]).map(r => ({
+      id: r.id,
+      name: r.name,
+      segment: r.segment,
+      healthScore: parseFloat(r.health_score) || 0,
+      revenue: parseFloat(r.dim_revenue) || 0,
+      segmentMedian: parseFloat(r.median_revenue) || 0,
+      gap: parseFloat(r.gap) || 0,
+      annualPotential: parseFloat(r.annual_potential) || 0,
+      riskLevel: r.risk_level,
+    }));
+
+    const totalPotential = opportunities.reduce((sum, o) => sum + o.annualPotential, 0);
+
+    res.json({ opportunities, totalCount: opportunities.length, totalAnnualPotential: totalPotential });
+  } catch (err) {
+    console.error("Expansion opportunities error:", err);
+    res.status(500).json({ error: "Erro ao buscar oportunidades de expansão" });
+  }
+});
+
+// ─── GET /analytics-history ───────────────────────────────────────────────────
+retainRouter.get("/analytics-history", async (req, res) => {
+  try {
+    const tenantId = req.tenantId!;
+    const rows = await db.select({
+      snapshotDate: retainAnalytics.snapshotDate,
+      mrr: retainAnalytics.mrr,
+      churnRate: retainAnalytics.churnRate,
+      avgHealthScore: retainAnalytics.avgHealthScore,
+      revenueAtRisk: retainAnalytics.revenueAtRisk,
+    })
+      .from(retainAnalytics)
+      .where(eq(retainAnalytics.tenantId, tenantId))
+      .orderBy(asc(retainAnalytics.snapshotDate))
+      .limit(13);
+
+    // Compute NRR for each month vs previous
+    const PT_MONTHS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+    const data = rows.map((r, i) => {
+      const d = new Date(String(r.snapshotDate) + "T12:00:00Z");
+      const prev = rows[i - 1];
+      const nrr = prev?.mrr && prev.mrr > 0 ? Math.round(((r.mrr ?? 0) / prev.mrr) * 1000) / 10 : null;
+      return {
+        month: `${PT_MONTHS[d.getUTCMonth()]}/${String(d.getUTCFullYear()).slice(2)}`,
+        mrr: r.mrr,
+        churnRate: r.churnRate,
+        avgHealthScore: r.avgHealthScore,
+        revenueAtRisk: r.revenueAtRisk,
+        nrr,
+      };
+    });
+
+    res.json(data);
+  } catch (err) {
+    console.error("Analytics history error:", err);
+    res.status(500).json({ error: "Erro ao buscar histórico analítico" });
+  }
+});
+
 // ─── GET /renewals ──────────────────────────────────────────────────────────
 retainRouter.get("/renewals", async (req, res) => {
   try {
@@ -808,5 +1368,167 @@ retainRouter.post("/customers/:id/churn", async (req, res) => {
   } catch (err) {
     console.error("Mark churn error:", err);
     res.status(500).json({ error: "Erro ao marcar churn" });
+  }
+});
+
+// ─── GET /voc — Voz do Cliente ───────────────────────────────────────────────
+// Aggregates CX-focused metrics from existing customer data:
+//   - NPS score derived from dimSatisfaction (0-100 scale)
+//   - NPS distribution (promoters ≥70, neutrals 50-69, detractors <50)
+//   - Detractors ordered by revenue (biggest revenue risk first)
+//   - Ticket theme frequency (from rawData.tickets_tema / ticket_tema fields)
+//   - Open actions for detractor customers
+retainRouter.get("/voc", async (req, res) => {
+  try {
+    const tenantId = req.tenantId!;
+
+    const allCustomers = await db.select().from(customers)
+      .where(and(
+        eq(customers.tenantId, tenantId),
+        sql`${customers.status} IN ('active', 'at_risk')`,
+      ));
+
+    if (allCustomers.length === 0) {
+      return res.json({
+        nps: null,
+        npsDistribution: { promoters: 0, neutrals: 0, detractors: 0, total: 0 },
+        detractorsByRevenue: [],
+        ticketThemes: [],
+        detractorActions: [],
+      });
+    }
+
+    // ── NPS from dimSatisfaction (0-100 scale) ────────────────────────────
+    // Promoters: ≥ 70 (maps to NPS 7-10), Neutrals: 50-69, Detractors: < 50
+    const withSatisfaction = allCustomers.filter((c) => c.dimSatisfaction != null);
+    const promoters = withSatisfaction.filter((c) => c.dimSatisfaction! >= 70);
+    const neutrals = withSatisfaction.filter((c) => c.dimSatisfaction! >= 50 && c.dimSatisfaction! < 70);
+    const detractors = withSatisfaction.filter((c) => c.dimSatisfaction! < 50);
+
+    const total = withSatisfaction.length;
+    const nps = total > 0
+      ? Math.round(((promoters.length - detractors.length) / total) * 100)
+      : null;
+
+    // ── Detractors ordered by revenue ─────────────────────────────────────
+    const detractorsByRevenue = detractors
+      .sort((a, b) => (b.dimRevenue ?? 0) - (a.dimRevenue ?? 0))
+      .slice(0, 10)
+      .map((c) => ({
+        id: c.id,
+        name: c.name,
+        email: c.email,
+        revenue: c.dimRevenue,
+        satisfaction: c.dimSatisfaction,
+        satisfactionLabel: c.dimSatisfaction != null
+          ? `${Math.round(c.dimSatisfaction / 10)} / 10`
+          : null,
+        segment: c.segment,
+      }));
+
+    const totalDetractorRevenue = detractors.reduce((sum, c) => sum + (c.dimRevenue ?? 0), 0);
+
+    // ── Ticket theme frequency ─────────────────────────────────────────────
+    // Look in rawData for common ticket theme field names
+    const themeFieldCandidates = [
+      "tickets_tema", "ticket_tema", "tema_ticket", "tema_chamado",
+      "categoria_ticket", "Categoria do Ticket", "Tema do chamado",
+      "ticket_category", "ticket_theme",
+    ];
+    const themeCounts: Record<string, number> = {};
+    for (const c of allCustomers) {
+      const raw = c.rawData as Record<string, string> | null;
+      if (!raw) continue;
+      for (const field of themeFieldCandidates) {
+        const val = raw[field];
+        if (val && val.trim() !== "") {
+          const theme = val.trim();
+          themeCounts[theme] = (themeCounts[theme] ?? 0) + 1;
+          break; // only count once per customer
+        }
+      }
+    }
+    const ticketThemes = Object.entries(themeCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([theme, count]) => ({ theme, count }));
+
+    // ── Verbatims (NPS comments) ───────────────────────────────────────────
+    const verbatimFieldCandidates = [
+      "nps_verbatim", "verbatim", "comentario_nps", "Comentário NPS",
+      "feedback_aberto", "Feedback Aberto", "nps_comment",
+    ];
+    // Show verbatims from non-promoters (detractors + neutrals), fall back to any customer with a comment
+    const verbatimCandidates = [
+      ...detractors,
+      ...neutrals,
+      ...promoters,
+    ].slice(0, 20);
+    const verbatims: Array<{ name: string; text: string; satisfaction: number | null }> = [];
+    for (const c of verbatimCandidates) {
+      if (verbatims.length >= 8) break;
+      const raw = c.rawData as Record<string, string> | null;
+      if (!raw) continue;
+      for (const field of verbatimFieldCandidates) {
+        const val = raw[field];
+        if (val && val.trim() !== "") {
+          verbatims.push({ name: c.name, text: val.trim(), satisfaction: c.dimSatisfaction });
+          break;
+        }
+      }
+    }
+
+    // ── Detractor actions (pending/in_progress actions for detractor customers) ──
+    const detractorIds = detractors.map((c) => c.id);
+    let detractorActions: any[] = [];
+    if (detractorIds.length > 0) {
+      const rawActions = await db.select({
+          id: retainActions.id,
+          customerId: retainActions.customerId,
+          type: retainActions.type,
+          description: retainActions.description,
+          priority: retainActions.priority,
+          dueDate: retainActions.dueDate,
+          customerName: customers.name,
+          customerRevenue: customers.dimRevenue,
+        })
+        .from(retainActions)
+        .innerJoin(customers, eq(retainActions.customerId, customers.id))
+        .where(
+          and(
+            eq(retainActions.tenantId, tenantId),
+            sql`${retainActions.status} IN ('pending', 'in_progress')`,
+          ),
+        )
+        .orderBy(desc(customers.dimRevenue))
+        .limit(50);
+
+      // Filter to detractor customers in JS (avoids complex SQL array)
+      const detractorIdSet = new Set(detractorIds);
+      detractorActions = rawActions
+        .filter((a) => detractorIdSet.has(a.customerId))
+        .slice(0, 10);
+    }
+
+    res.json({
+      nps,
+      npsDistribution: {
+        promoters: promoters.length,
+        neutrals: neutrals.length,
+        detractors: detractors.length,
+        total,
+        promotersPct: total > 0 ? Math.round((promoters.length / total) * 100) : 0,
+        neutralsPct: total > 0 ? Math.round((neutrals.length / total) * 100) : 0,
+        detractorsPct: total > 0 ? Math.round((detractors.length / total) * 100) : 0,
+      },
+      detractorsByRevenue,
+      totalDetractorRevenue,
+      ticketThemes,
+      verbatims,
+      detractorActions,
+    });
+  } catch (err) {
+    console.error("VOC error:", err);
+    res.status(500).json({ error: "Erro ao buscar Voz do Cliente" });
   }
 });

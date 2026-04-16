@@ -170,7 +170,10 @@ export function useMarkCustomerChurned() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (customerId: string) => api.post(`/retain/customers/${customerId}/churn`, {}),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["retain"] }); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["retain"] });
+      qc.invalidateQueries({ queryKey: ["obtain"] }); // feedback loop: ICP recalculates
+    },
   });
 }
 
@@ -180,6 +183,15 @@ export function useRetainRevenueAnalytics() {
     queryKey: ["retain", "revenue-analytics"],
     queryFn: () => api.get<any>("/retain/revenue-analytics"),
     staleTime: 60_000,
+  });
+}
+
+// ─── Action Priorities ──────────────────────────────────────────────────────
+export function useRetainActionPriorities() {
+  return useQuery({
+    queryKey: ["retain", "action-priorities"],
+    queryFn: () => api.get<any>("/retain/action-priorities"),
+    staleTime: 30_000,
   });
 }
 
@@ -197,6 +209,39 @@ export function useSuggestRetainMapping() {
   return useMutation({
     mutationFn: (data: { headers: string[]; sampleRows: Record<string, string>[] }) =>
       api.post<any[]>("/retain/upload/suggest-mapping", data),
+  });
+}
+
+export function usePreviewRetainUpload() {
+  return useMutation({
+    mutationFn: (data: { mapping: Record<string, string>; sampleRows: Record<string, string>[] }) =>
+      api.post<{
+        previewRows: any[];
+        satisfactionScale: string;
+        dateFormatDetected: boolean;
+        mappedDimensions: number;
+        totalDimensions: number;
+        missingDimensions: string[];
+      }>("/retain/upload/preview", data),
+  });
+}
+
+export function useRetainVoc() {
+  return useQuery({
+    queryKey: ["retain", "voc"],
+    queryFn: () => api.get<{
+      nps: number | null;
+      npsDistribution: {
+        promoters: number; neutrals: number; detractors: number; total: number;
+        promotersPct: number; neutralsPct: number; detractorsPct: number;
+      };
+      detractorsByRevenue: any[];
+      totalDetractorRevenue: number;
+      ticketThemes: Array<{ theme: string; count: number }>;
+      verbatims: Array<{ name: string; text: string; satisfaction: number | null }>;
+      detractorActions: any[];
+    }>("/retain/voc"),
+    staleTime: 60_000,
   });
 }
 
@@ -231,5 +276,27 @@ export function useRecalculateObtain() {
   return useMutation({
     mutationFn: () => api.post<{ message: string; scoresGenerated: number; alertsGenerated: number }>("/obtain/recalculate", {}),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["obtain"] }); },
+  });
+}
+
+// ─── Expansion Opportunities ─────────────────────────────────────────────────
+export function useRetainExpansionOpportunities() {
+  return useQuery({
+    queryKey: ["retain", "expansion-opportunities"],
+    queryFn: () => api.get<{
+      opportunities: Array<{ id: string; name: string; segment: string; healthScore: number; revenue: number; segmentMedian: number; gap: number; annualPotential: number; riskLevel: string }>;
+      totalCount: number;
+      totalAnnualPotential: number;
+    }>("/retain/expansion-opportunities"),
+    staleTime: 120_000,
+  });
+}
+
+// ─── Analytics History (sparkline for LifecyclePage) ─────────────────────────
+export function useRetainAnalyticsHistory() {
+  return useQuery({
+    queryKey: ["retain", "analytics-history"],
+    queryFn: () => api.get<Array<{ month: string; mrr: number; churnRate: number; avgHealthScore: number; revenueAtRisk: number; nrr: number | null }>>("/retain/analytics-history"),
+    staleTime: 120_000,
   });
 }

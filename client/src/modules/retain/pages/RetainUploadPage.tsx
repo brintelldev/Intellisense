@@ -3,7 +3,12 @@ import { useLocation } from "wouter";
 import { ColumnMapper } from "../../../shared/components/ColumnMapper";
 import { Progress } from "../../../shared/components/ui/progress";
 import { LoadingState } from "../../../shared/components/LoadingState";
-import { useRetainUploads, useUploadRetainCSV, useSuggestRetainMapping } from "../../../shared/hooks/useRetain";
+import {
+  useRetainUploads,
+  useUploadRetainCSV,
+  useSuggestRetainMapping,
+  usePreviewRetainUpload,
+} from "../../../shared/hooks/useRetain";
 
 const SYSTEM_FIELDS = [
   { key: "id", label: "Identificador do cliente", required: true },
@@ -13,11 +18,23 @@ const SYSTEM_FIELDS = [
   { key: "tenureDays", label: "Tempo de relacionamento" },
   { key: "interactionFrequency", label: "Frequência de interação" },
   { key: "supportVolume", label: "Volume de suporte" },
-  { key: "satisfaction", label: "Satisfação" },
+  { key: "satisfaction", label: "Satisfação / NPS" },
   { key: "contractRemainingDays", label: "Vínculo contratual" },
   { key: "usageIntensity", label: "Intensidade de uso" },
   { key: "recencyDays", label: "Recência" },
 ];
+
+const DIM_LABELS: Record<string, string> = {
+  revenue: "Receita",
+  paymentRegularity: "Pagamentos",
+  tenureDays: "Tempo de cliente",
+  interactionFrequency: "Interações",
+  supportVolume: "Chamados",
+  satisfaction: "NPS / Satisfação",
+  contractRemainingDays: "Contrato",
+  usageIntensity: "Uso",
+  recencyDays: "Recência",
+};
 
 async function readCsvHeaders(file: File): Promise<string[]> {
   const text = await file.slice(0, 4096).text();
@@ -32,7 +49,7 @@ async function readCsvSampleRows(file: File): Promise<{ headers: string[]; sampl
   const sep = lines[0].includes(";") ? ";" : ",";
   const headers = lines[0].split(sep).map(h => h.replace(/^"|"$/g, "").trim());
   const sampleRows: Record<string, string>[] = [];
-  for (let i = 1; i < Math.min(lines.length, 4); i++) {
+  for (let i = 1; i < Math.min(lines.length, 6); i++) {
     const vals = lines[i].split(sep).map(v => v.replace(/^"|"$/g, "").trim());
     const row: Record<string, string> = {};
     headers.forEach((h, idx) => { row[h] = vals[idx] ?? ""; });
@@ -41,20 +58,41 @@ async function readCsvSampleRows(file: File): Promise<{ headers: string[]; sampl
   return { headers, sampleRows };
 }
 
-type Step = "upload" | "mapping" | "processing" | "done";
+type Step = "upload" | "mapping" | "preview" | "processing" | "done";
+
+const SCALE_LABELS: Record<string, string> = {
+  "likert-5": "Escala Likert 1-5 (normalizado ×20)",
+  "nps-10": "Escala NPS 0-10 (normalizado ×10)",
+  "percent-100": "Escala percentual 0-100",
+};
+
+function ScaleChip({ scale }: { scale: string }) {
+  const label = SCALE_LABELS[scale] ?? scale;
+  return (
+    <span className="inline-flex items-center gap-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-1 rounded-full font-medium">
+      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+      NPS: {label}
+    </span>
+  );
+}
 
 export default function RetainUploadPage() {
   const [, navigate] = useLocation();
   const { data: apiUploads, isLoading: uploadsLoading } = useRetainUploads();
   const uploadMutation = useUploadRetainCSV();
   const suggestMappingMutation = useSuggestRetainMapping();
+  const previewMutation = usePreviewRetainUpload();
 
   const [step, setStep] = useState<Step>("upload");
   const [filename, setFilename] = useState("");
   const [csvColumns, setCsvColumns] = useState<string[]>([]);
   const [mapping, setMapping] = useState<Record<string, string>>({});
+  const [sampleRowsCache, setSampleRowsCache] = useState<Record<string, string>[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [uploadResult, setUploadResult] = useState<any>(null);
+  const [previewData, setPreviewData] = useState<any>(null);
   const [serverSuggestions, setServerSuggestions] = useState<any[] | undefined>(undefined);
   const fileRef = useRef<HTMLInputElement>(null);
   const fileObjRef = useRef<File | null>(null);
@@ -65,10 +103,12 @@ export default function RetainUploadPage() {
     setMapping({});
     setError(null);
     setServerSuggestions(undefined);
+    setPreviewData(null);
     const headers = await readCsvHeaders(file);
     setCsvColumns(headers);
     setStep("mapping");
     readCsvSampleRows(file).then((parsed) => {
+      setSampleRowsCache(parsed.sampleRows);
       suggestMappingMutation.mutate(parsed, {
         onSuccess: (data: any) => { setServerSuggestions(data); },
       });
@@ -81,7 +121,7 @@ export default function RetainUploadPage() {
     if (file) handleFile(file);
   };
 
-  const handleProcess = () => {
+  const handleGoToPreview = () => {
     setError(null);
     const requiredFields = SYSTEM_FIELDS.filter(f => f.required);
     const missing = requiredFields.filter(f => !mapping[f.key]);
@@ -89,8 +129,24 @@ export default function RetainUploadPage() {
       setError(`Mapeie os campos obrigatórios: ${missing.map(f => f.label).join(", ")}`);
       return;
     }
-    if (!fileObjRef.current) return;
+    previewMutation.mutate(
+      { mapping, sampleRows: sampleRowsCache },
+      {
+        onSuccess: (data) => {
+          setPreviewData(data);
+          setStep("preview");
+        },
+        onError: () => {
+          // If preview fails, go straight to commit
+          handleProcess();
+        },
+      }
+    );
+  };
 
+  const handleProcess = () => {
+    setError(null);
+    if (!fileObjRef.current) return;
     setStep("processing");
     uploadMutation.mutate(
       { file: fileObjRef.current, mapping },
@@ -114,18 +170,13 @@ export default function RetainUploadPage() {
     setMapping({});
     setError(null);
     setUploadResult(null);
+    setPreviewData(null);
     setServerSuggestions(undefined);
+    setSampleRowsCache([]);
     fileObjRef.current = null;
   };
 
   const uploads = apiUploads ?? [];
-
-  const PROCESSING_MESSAGES = [
-    "Enviando arquivo...",
-    "Processando registros...",
-    "Calculando health scores...",
-    "Gerando predições...",
-  ];
 
   return (
     <div className="space-y-6 w-full">
@@ -134,6 +185,32 @@ export default function RetainUploadPage() {
         <span className="text-xs font-semibold bg-[#293b83]/10 text-[#293b83] px-2.5 py-1 rounded-full">Retain Sense</span>
       </div>
 
+      {/* Step indicator */}
+      {step !== "upload" && step !== "done" && (
+        <div className="flex items-center gap-2 text-xs text-slate-500">
+          {[
+            { id: "mapping", label: "Mapeamento" },
+            { id: "preview", label: "Preview" },
+            { id: "processing", label: "Processando" },
+          ].map((s, i) => {
+            const steps: Step[] = ["mapping", "preview", "processing"];
+            const currentIdx = steps.indexOf(step as any);
+            const thisIdx = steps.indexOf(s.id as any);
+            const active = thisIdx === currentIdx;
+            const done = thisIdx < currentIdx;
+            return (
+              <div key={s.id} className="flex items-center gap-2">
+                {i > 0 && <div className="w-8 h-px bg-slate-200" />}
+                <span className={`flex items-center gap-1 font-medium ${active ? "text-[#293b83]" : done ? "text-green-600" : "text-slate-400"}`}>
+                  {done ? "✓" : `${i + 1}.`} {s.label}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Step: upload ───────────────────────────────────────────────────── */}
       {step === "upload" && (
         <div
           className="bg-white rounded-xl border-2 border-dashed border-slate-300 hover:border-[#293b83] transition-colors cursor-pointer p-12 text-center"
@@ -146,10 +223,11 @@ export default function RetainUploadPage() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
           </svg>
           <p className="text-slate-700 font-medium text-lg">Arraste seu arquivo CSV ou clique para selecionar</p>
-          <p className="text-sm text-slate-400 mt-1">Formatos aceitos: .csv, .xlsx — Máximo 50MB</p>
+          <p className="text-sm text-slate-400 mt-1">Qualquer formato CSV — UTF-8, Latin-1, vírgula ou ponto-e-vírgula — Máximo 50MB</p>
         </div>
       )}
 
+      {/* ── Step: mapping ─────────────────────────────────────────────────── */}
       {step === "mapping" && (
         <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100 space-y-5">
           <div className="flex items-center gap-3">
@@ -173,65 +251,253 @@ export default function RetainUploadPage() {
             <button onClick={() => setStep("upload")} className="h-10 px-5 border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50">
               Voltar
             </button>
-            <button onClick={handleProcess} className="h-10 px-6 bg-[#293b83] text-white rounded-lg text-sm font-semibold hover:bg-[#1e2d6b]">
-              Confirmar e processar
+            <button
+              onClick={handleGoToPreview}
+              disabled={previewMutation.isPending}
+              className="h-10 px-6 bg-[#293b83] text-white rounded-lg text-sm font-semibold hover:bg-[#1e2d6b] disabled:opacity-60 flex items-center gap-2"
+            >
+              {previewMutation.isPending && <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />}
+              Ver preview interpretado →
             </button>
           </div>
         </div>
       )}
 
+      {/* ── Step: preview ─────────────────────────────────────────────────── */}
+      {step === "preview" && previewData && (
+        <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100 space-y-5">
+          <div>
+            <h3 className="font-semibold text-slate-800 text-lg">Preview interpretado</h3>
+            <p className="text-sm text-slate-500 mt-1">Veja como o sistema interpretou seus dados antes de commitar. Verifique se os valores fazem sentido.</p>
+          </div>
+
+          {/* Detection chips */}
+          <div className="flex flex-wrap gap-2">
+            <ScaleChip scale={previewData.satisfactionScale} />
+            {previewData.dateFormatDetected && (
+              <span className="inline-flex items-center gap-1 text-xs bg-purple-50 text-purple-700 border border-purple-200 px-2.5 py-1 rounded-full font-medium">
+                📅 Datas detectadas e convertidas em dias
+              </span>
+            )}
+            <span className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium border ${
+              previewData.mappedDimensions >= 7
+                ? "bg-green-50 text-green-700 border-green-200"
+                : previewData.mappedDimensions >= 5
+                ? "bg-amber-50 text-amber-700 border-amber-200"
+                : "bg-red-50 text-red-700 border-red-200"
+            }`}>
+              {previewData.mappedDimensions} de {previewData.totalDimensions} dimensões mapeadas
+            </span>
+            {previewData.missingDimensions.length > 0 && (
+              <span className="inline-flex items-center gap-1 text-xs bg-slate-50 text-slate-500 border border-slate-200 px-2.5 py-1 rounded-full">
+                Ausentes: {previewData.missingDimensions.map((d: string) => DIM_LABELS[d] ?? d).join(", ")}
+              </span>
+            )}
+          </div>
+
+          {/* Preview table */}
+          <div className="overflow-x-auto rounded-lg border border-slate-200">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">Empresa</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">Receita</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">NPS</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">Contrato</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">Chamados</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {previewData.previewRows.map((row: any, i: number) => (
+                  <tr key={i} className="hover:bg-slate-50/50">
+                    <td className="px-3 py-2.5 font-medium text-slate-800 max-w-[180px] truncate">{row.name}</td>
+                    <td className="px-3 py-2.5 text-slate-700 font-mono text-xs">{row.revenue ?? <span className="text-slate-300">—</span>}</td>
+                    <td className="px-3 py-2.5">
+                      {row.satisfaction ? (
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                          row.satisfaction.includes("promotor") ? "bg-green-100 text-green-700" :
+                          row.satisfaction.includes("neutro") ? "bg-amber-100 text-amber-700" :
+                          "bg-red-100 text-red-700"
+                        }`}>
+                          {row.satisfaction}
+                        </span>
+                      ) : <span className="text-slate-300">—</span>}
+                    </td>
+                    <td className="px-3 py-2.5 text-slate-600 text-xs">{row.contractRemainingDays ?? <span className="text-slate-300">—</span>}</td>
+                    <td className="px-3 py-2.5 text-slate-600 tabular-nums">{row.supportVolume ?? <span className="text-slate-300">—</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <button onClick={() => setStep("mapping")} className="h-10 px-5 border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50">
+              ← Voltar e ajustar mapeamento
+            </button>
+            <button
+              onClick={handleProcess}
+              className="h-10 px-6 bg-[#293b83] text-white rounded-lg text-sm font-semibold hover:bg-[#1e2d6b]"
+            >
+              Confirmar e commitar →
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Step: processing ──────────────────────────────────────────────── */}
       {step === "processing" && (
         <div className="bg-white rounded-xl p-8 shadow-sm border border-slate-100 text-center space-y-4">
           <div className="w-12 h-12 border-4 border-[#293b83] border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="font-semibold text-slate-800">{PROCESSING_MESSAGES[1]}</p>
+          <p className="font-semibold text-slate-800">Processando registros...</p>
           <div className="max-w-xs mx-auto">
             <Progress value={undefined} color="#293b83" />
           </div>
-          <p className="text-xs text-slate-500">Aguarde enquanto processamos o arquivo...</p>
+          <p className="text-xs text-slate-500">Calculando health scores, gerando predições e alertas...</p>
         </div>
       )}
 
+      {/* ── Step: done ────────────────────────────────────────────────────── */}
       {step === "done" && (
-        <div className="bg-green-50 rounded-xl p-6 border border-green-200 space-y-4">
-          <div className="text-center space-y-2">
-            <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center mx-auto">
-              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
+        <div className="space-y-4">
+          {/* Hero */}
+          <div className="bg-gradient-to-br from-[#293b83] to-[#1e2d6b] rounded-xl p-8 text-white">
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 bg-white/20 rounded-full flex items-center justify-center flex-shrink-0">
+                <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
+              </div>
+              <div>
+                <p className="text-2xl font-bold">Inteligência gerada!</p>
+                {uploadResult && (
+                  <p className="text-white/80 text-sm mt-0.5">
+                    {(uploadResult.rowsCreated ?? 0) + (uploadResult.rowsUpdated ?? 0)} clientes analisados
+                    {uploadResult.alertsGenerated > 0 && ` · ${uploadResult.alertsGenerated} alertas acionáveis`}
+                    {uploadResult.intelligenceSummary?.contractsExpiring30d > 0 && ` · ${uploadResult.intelligenceSummary.contractsExpiring30d} contratos vencendo`}
+                  </p>
+                )}
+              </div>
             </div>
-            <p className="text-xl font-bold text-green-800">Processamento completo!</p>
           </div>
-          {uploadResult && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              <div className="bg-white rounded-lg p-3 text-center border border-green-100">
-                <p className="text-2xl font-bold text-slate-800">{uploadResult.rowsCreated ?? 0}</p>
-                <p className="text-xs text-slate-500">Registros criados</p>
+
+          {/* Intelligence Brief */}
+          {uploadResult?.intelligenceSummary && (() => {
+            const s = uploadResult.intelligenceSummary;
+            const fmtBRL = (v: number) => v >= 1_000_000
+              ? `R$${(v / 1_000_000).toFixed(1)}M`
+              : v >= 1_000
+              ? `R$${(v / 1_000).toFixed(0)}K`
+              : `R$${v.toFixed(0)}`;
+            return (
+              <div className="space-y-3">
+                {/* Risk + Revenue row */}
+                <div className="grid grid-cols-2 gap-3">
+                  {s.newCriticalCustomers?.length > 0 && (
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                        <span className="text-xs font-semibold text-red-700 uppercase tracking-wide">Em Zona Crítica</span>
+                      </div>
+                      <p className="text-2xl font-bold text-red-700">{s.newCriticalCustomers.length}</p>
+                      <p className="text-xs text-slate-600 mt-1">
+                        {s.newCriticalCustomers.slice(0, 2).map((c: any) => c.name).join(" · ")}
+                        {s.newCriticalCustomers.length > 2 ? ` +${s.newCriticalCustomers.length - 2}` : ""}
+                      </p>
+                    </div>
+                  )}
+                  {s.totalRevenueAtRisk > 0 && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <svg className="w-3 h-3 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Receita Sob Risco</span>
+                      </div>
+                      <p className="text-2xl font-bold text-amber-700">{fmtBRL(s.totalRevenueAtRisk)}</p>
+                      {s.deltaRevenueAtRisk !== 0 && (
+                        <p className={`text-xs mt-1 ${s.deltaRevenueAtRisk > 0 ? "text-red-600" : "text-green-600"}`}>
+                          {s.deltaRevenueAtRisk > 0 ? "↑" : "↓"} {fmtBRL(Math.abs(s.deltaRevenueAtRisk))} vs. upload anterior
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Top Priority */}
+                {s.topPriority && (
+                  <div className="bg-[#293b83]/5 border border-[#293b83]/20 rounded-xl p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <svg className="w-4 h-4 text-[#293b83]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                      <span className="text-xs font-semibold text-[#293b83] uppercase tracking-wide">Ação Prioritária</span>
+                    </div>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-slate-900">{s.topPriority.name}</p>
+                        <p className="text-xs text-slate-500">{s.topPriority.segment} · {fmtBRL(s.topPriority.revenue)}/mês · Churn {Math.round(s.topPriority.churnProbability * 100)}%</p>
+                        {s.topPriority.topFactor && (
+                          <p className="text-xs text-slate-600 mt-1">
+                            <span className="font-medium">Fator crítico:</span> {s.topPriority.topFactor.label}
+                          </p>
+                        )}
+                        {s.topPriority.recommendedAction && (
+                          <p className="text-xs text-[#293b83] font-medium mt-1">{s.topPriority.recommendedAction.split(".")[0]}.</p>
+                        )}
+                      </div>
+                      <span className={`flex-shrink-0 text-xs font-semibold px-2 py-1 rounded-full ${s.topPriority.riskLevel === "critical" ? "bg-red-100 text-red-700" : "bg-orange-100 text-orange-700"}`}>
+                        {s.topPriority.riskLevel === "critical" ? "Crítico" : "Alto"}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Stats grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="bg-white rounded-xl p-4 text-center border border-slate-100 shadow-sm">
+                    <p className="text-3xl font-bold text-slate-900">{uploadResult.rowsCreated ?? 0}</p>
+                    <p className="text-xs text-slate-500 mt-1">Novos</p>
+                  </div>
+                  <div className="bg-white rounded-xl p-4 text-center border border-slate-100 shadow-sm">
+                    <p className="text-3xl font-bold text-slate-700">{uploadResult.rowsUpdated ?? 0}</p>
+                    <p className="text-xs text-slate-500 mt-1">Atualizados</p>
+                  </div>
+                  <div className="bg-white rounded-xl p-4 text-center border border-slate-100 shadow-sm">
+                    <p className="text-3xl font-bold text-amber-600">{uploadResult.alertsGenerated ?? 0}</p>
+                    <p className="text-xs text-slate-500 mt-1">Alertas</p>
+                  </div>
+                  <div className="bg-white rounded-xl p-4 text-center border border-slate-100 shadow-sm">
+                    <p className="text-3xl font-bold text-red-600">{s.contractsExpiring30d ?? 0}</p>
+                    <p className="text-xs text-slate-500 mt-1">Contratos &lt;30d</p>
+                  </div>
+                </div>
               </div>
-              <div className="bg-white rounded-lg p-3 text-center border border-green-100">
-                <p className="text-2xl font-bold text-slate-800">{uploadResult.rowsUpdated ?? 0}</p>
-                <p className="text-xs text-slate-500">Registros atualizados</p>
-              </div>
-              <div className="bg-white rounded-lg p-3 text-center border border-green-100">
-                <p className="text-2xl font-bold text-slate-800">{uploadResult.rowsSkipped ?? 0}</p>
-                <p className="text-xs text-slate-500">Registros ignorados</p>
-              </div>
-              <div className="bg-white rounded-lg p-3 text-center border border-green-100">
-                <p className="text-2xl font-bold text-[#293b83]">{uploadResult.predictionsGenerated ?? 0}</p>
-                <p className="text-xs text-slate-500">Predições geradas</p>
-              </div>
-              <div className="bg-white rounded-lg p-3 text-center border border-green-100">
-                <p className="text-2xl font-bold text-amber-600">{uploadResult.alertsGenerated ?? 0}</p>
-                <p className="text-xs text-slate-500">Alertas gerados</p>
-              </div>
+            );
+          })()}
+
+          {/* Detection info */}
+          {uploadResult && (uploadResult.detectedEncoding || uploadResult.satisfactionScale) && (
+            <div className="flex flex-wrap gap-2">
+              {uploadResult.detectedEncoding && uploadResult.detectedEncoding !== "UTF-8" && (
+                <span className="inline-flex items-center gap-1 text-xs bg-purple-50 text-purple-700 border border-purple-200 px-2.5 py-1 rounded-full font-medium">
+                  Encoding detectado: {uploadResult.detectedEncoding}
+                </span>
+              )}
+              {uploadResult.satisfactionScale && (
+                <ScaleChip scale={uploadResult.satisfactionScale} />
+              )}
+              {uploadResult.detectedDelimiter === ";" && (
+                <span className="text-xs bg-slate-50 text-slate-600 border border-slate-200 px-2.5 py-1 rounded-full">
+                  Delimitador: ponto-e-vírgula (;)
+                </span>
+              )}
             </div>
           )}
-          <div className="flex gap-3 justify-center">
-            <button onClick={reset} className="h-10 px-5 border border-green-300 text-green-700 rounded-lg text-sm hover:bg-green-100">
+
+          <div className="flex gap-3 justify-center flex-wrap">
+            <button onClick={reset} className="h-10 px-5 border border-slate-200 text-slate-600 rounded-lg text-sm hover:bg-slate-50">
               Novo upload
             </button>
-            <button onClick={() => navigate("/retain")} className="h-10 px-6 border border-[#293b83] text-[#293b83] rounded-lg text-sm font-semibold hover:bg-[#293b83]/5">
-              Ver Alertas
+            <button onClick={() => navigate("/retain/predictions")} className="h-10 px-6 border border-[#293b83] text-[#293b83] rounded-lg text-sm font-semibold hover:bg-[#293b83]/5">
+              Ver predições
             </button>
-            <button onClick={() => navigate("/retain/predictions")} className="h-10 px-6 bg-[#293b83] text-white rounded-lg text-sm font-semibold hover:bg-[#1e2d6b]">
-              Ver predições →
+            <button onClick={() => navigate("/retain")} className="h-10 px-6 bg-[#293b83] text-white rounded-lg text-sm font-semibold hover:bg-[#1e2d6b]">
+              Ver dashboard →
             </button>
           </div>
         </div>

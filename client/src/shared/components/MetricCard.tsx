@@ -13,7 +13,7 @@ interface MetricCardProps {
 
 export function MetricCard({ icon, label, value, change, changeIsGood = true, variant = "neutral", className }: MetricCardProps) {
   const accentColor = variant === "retain" ? "#293b83" : variant === "obtain" ? "#10B981" : "#67b4b0";
-  const isPositive = change !== undefined && change >= 0;
+  const isPositive = change != null && change >= 0;
   const isGoodChange = changeIsGood ? isPositive : !isPositive;
 
   return (
@@ -25,7 +25,7 @@ export function MetricCard({ icon, label, value, change, changeIsGood = true, va
         >
           <span style={{ color: accentColor }}>{icon}</span>
         </div>
-        {change !== undefined && (
+        {change != null && (
           <div className={cn("flex items-center gap-1 text-xs font-medium", isGoodChange ? "text-green-600" : "text-red-500")}>
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               {isPositive

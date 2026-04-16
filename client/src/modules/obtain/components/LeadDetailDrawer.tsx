@@ -52,6 +52,19 @@ export function LeadDetailDrawer({ lead, onClose }: Props) {
           <p className="text-sm text-slate-500">{lead.company} · {lead.industry} · {lead.city}/{lead.state}</p>
         </div>
 
+        {/* Intelligence Brief */}
+        {score?.narrative && (
+          <div className="bg-[#10B981]/5 border border-[#10B981]/20 rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <svg className="w-4 h-4 text-[#10B981]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <span className="text-xs font-semibold text-[#10B981] uppercase tracking-wide">Briefing do Lead</span>
+            </div>
+            <p className="text-sm text-slate-700 leading-relaxed">{score.narrative}</p>
+          </div>
+        )}
+
         {/* Score cards */}
         <div className="grid grid-cols-3 gap-3">
           <div className="bg-emerald-50 rounded-xl p-3 text-center border border-emerald-100">
@@ -151,17 +164,62 @@ export function LeadDetailDrawer({ lead, onClose }: Props) {
           </div>
         )}
 
-        {/* ICP Match */}
-        {score && (
-          <div className="bg-slate-50 rounded-xl p-4">
-            <h4 className="font-semibold text-slate-700 text-sm mb-3">Match de ICP</h4>
-            <div className="flex items-center gap-3">
-              <div className="flex-1">
-                <p className="text-sm font-medium text-slate-800">{score.icpCluster}</p>
-                <Progress value={score.icpMatch * 100} color="#10B981" className="mt-2" />
+        {/* ICP + Similar Customers */}
+        {score && (score.icpCluster || score.similarCustomers) && (
+          <div className="bg-slate-50 rounded-xl p-4 space-y-3">
+            {score.icpCluster && (
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-[#10B981]/10 flex items-center justify-center flex-shrink-0">
+                  <svg className="w-3.5 h-3.5 text-[#10B981]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Cluster ICP</p>
+                  <p className="text-sm font-semibold text-slate-800">{score.icpCluster}</p>
+                </div>
               </div>
-              <span className="text-xl font-bold text-[#10B981]">{(score.icpMatch * 100).toFixed(0)}%</span>
-            </div>
+            )}
+            {score.similarCustomers && score.similarCustomers.count > 0 && (
+              <div className="border-t border-slate-200 pt-3">
+                <p className="text-xs font-semibold text-slate-600 mb-2">Clientes Similares Ativos</p>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="text-center">
+                    <p className="text-xl font-bold text-slate-900">{score.similarCustomers.count}</p>
+                    <p className="text-[10px] text-slate-500">Clientes</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-xl font-bold text-slate-900">{score.similarCustomers.avgHealthScore}</p>
+                    <p className="text-[10px] text-slate-500">Health Médio</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-sm font-bold text-slate-900">
+                      {score.similarCustomers.avgRevenue >= 1000
+                        ? `R$${(score.similarCustomers.avgRevenue / 1000).toFixed(0)}K`
+                        : `R$${score.similarCustomers.avgRevenue}`}
+                    </p>
+                    <p className="text-[10px] text-slate-500">Receita Média</p>
+                  </div>
+                </div>
+              </div>
+            )}
+            {score.channelPerformance && (
+              <div className="border-t border-slate-200 pt-3 flex items-center justify-between">
+                <p className="text-xs text-slate-500">Performance do Canal ({SOURCE_LABELS[lead.source ?? ""] ?? lead.source})</p>
+                <div className="flex gap-3">
+                  <span className="text-xs font-semibold text-slate-700">{score.channelPerformance.conversionRate}% conversão</span>
+                  <span className="text-xs text-slate-500">·</span>
+                  <span className="text-xs font-semibold text-slate-700">
+                    {score.channelPerformance.avgLtv >= 1000000
+                      ? `R$${(score.channelPerformance.avgLtv / 1000000).toFixed(1)}M LTV médio`
+                      : score.channelPerformance.avgLtv >= 1000
+                      ? `R$${(score.channelPerformance.avgLtv / 1000).toFixed(0)}K LTV médio`
+                      : `R$${score.channelPerformance.avgLtv} LTV médio`
+                    }
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

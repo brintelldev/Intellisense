@@ -65,8 +65,8 @@ export default function ObtainCACLTVPage() {
           xMid={6}
           yMid={450}
           quadrantLabels={["Atenção", "Avaliar", "Escalar", "Interromper"]}
-          formatX={(v) => `R$${v}K`}
-          formatY={(v) => `R$${v}K`}
+          formatX={(v) => `R$${parseFloat(v.toFixed(1))}K`}
+          formatY={(v) => `R$${parseFloat(v.toFixed(0))}K`}
         />
       </div>
 
@@ -83,7 +83,7 @@ export default function ObtainCACLTVPage() {
               <th className="text-right text-xs font-semibold text-slate-500 px-4 py-3">CAC</th>
               <th className="text-right text-xs font-semibold text-slate-500 px-4 py-3">LTV Médio</th>
               <th className="text-right text-xs font-semibold text-slate-500 px-4 py-3">ROI Projetado</th>
-              <th className="text-right text-xs font-semibold text-slate-500 px-4 py-3">Budget</th>
+              <th className="text-right text-xs font-semibold text-slate-500 px-4 py-3">Conversão</th>
               <th className="text-right text-xs font-semibold text-slate-500 px-4 py-3">Status</th>
             </tr>
           </thead>
@@ -102,7 +102,7 @@ export default function ObtainCACLTVPage() {
                   <td className="text-right px-4 py-3 text-sm text-slate-700">{fmtBRL(c.cac)}</td>
                   <td className="text-right px-4 py-3 text-sm font-semibold text-slate-800">{fmtBRL(c.avgLtv)}</td>
                   <td className="text-right px-4 py-3 text-sm font-bold text-[#10B981]">{c.projectedRoi.toLocaleString("pt-BR")}%</td>
-                  <td className="text-right px-4 py-3 text-sm text-slate-700">{fmtBRL(c.budget)}</td>
+                  <td className="text-right px-4 py-3 text-sm text-slate-700">{c.conversionRate != null ? `${c.conversionRate}%` : "—"}</td>
                   <td className="text-right px-4 py-3">
                     <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${cfg.badge}`}>{ROI_LABELS[c.roiStatus]}</span>
                   </td>
@@ -114,17 +114,24 @@ export default function ObtainCACLTVPage() {
       </div>
 
       {/* Retroalimentação Retain→Obtain insight */}
-      <div className="border-l-4 border-[#293b83] bg-[#293b83]/5 rounded-r-xl p-4">
-        <div className="flex items-center gap-2 mb-2">
-          <RefreshCcw className="w-5 h-5 text-[#293b83]" />
-          <h4 className="font-semibold text-[#293b83] text-sm">Retroalimentação Retain → Obtain</h4>
-          <span className="text-xs bg-[#293b83] text-white px-2 py-0.5 rounded-full">Dados do Retain Sense</span>
-        </div>
-        <p className="text-sm text-slate-700">
-          A campanha <strong>Outbound</strong> gera leads com churn médio de <strong>4 meses</strong> e Health Score médio de <strong>32 (crítico)</strong>.
-          CAC de R$ 12.000 não se paga com esse perfil. <strong>Sugestão: realocar 80% do budget de Outbound para Indicação</strong> — estimativa de +150% de ROI com leads de maior LTV e menor churn.
-        </p>
-      </div>
+      {(() => {
+        const best = campaigns.reduce((a: any, b: any) => (a.avgLtv > b.avgLtv ? a : b), campaigns[0]);
+        const worst = campaigns.reduce((a: any, b: any) => (a.avgLtv < b.avgLtv ? a : b), campaigns[0]);
+        if (!best || !worst || best.id === worst.id) return null;
+        return (
+          <div className="border-l-4 border-[#293b83] bg-[#293b83]/5 rounded-r-xl p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <RefreshCcw className="w-5 h-5 text-[#293b83]" />
+              <h4 className="font-semibold text-[#293b83] text-sm">Retroalimentação Retain → Obtain</h4>
+              <span className="text-xs bg-[#293b83] text-white px-2 py-0.5 rounded-full">Dados do Retain Sense</span>
+            </div>
+            <p className="text-sm text-slate-700">
+              O canal <strong>{worst.name}</strong> gera leads com LTV médio de <strong>{fmtBRL(worst.avgLtv)}</strong> — o mais baixo da base. O canal <strong>{best.name}</strong> tem LTV médio de <strong>{fmtBRL(best.avgLtv)}</strong>, {Math.round((best.avgLtv / worst.avgLtv - 1) * 100)}% maior.{" "}
+              <strong>Sugestão: priorizar investimento em {best.name}</strong> para maximizar o retorno por lead adquirido.
+            </p>
+          </div>
+        );
+      })()}
     </div>
   );
 }
