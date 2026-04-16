@@ -72,7 +72,7 @@ obtainRouter.get("/dashboard", async (req, res) => {
 
     // Velocity score (20pts) - inverse of avg days in funnel (normalize: 0 days=20pts, 90days=0pts)
     const [avgFunnelTime] = await db.select({
-      avgDays: sql<number>`EXTRACT(EPOCH FROM (now() - avg(${leads.createdAt}))) / 86400`,
+      avgDays: sql<number>`avg(EXTRACT(EPOCH FROM (now() - ${leads.createdAt}))) / 86400`,
     }).from(leads).where(and(eq(leads.tenantId, tenantId), sql`${leads.status} != 'won'`));
     const avgDays = Math.max(0, avgFunnelTime?.avgDays ?? 30);
     const velocityScore = Math.max(0, (1 - avgDays / 90)) * 20;
@@ -604,7 +604,7 @@ obtainRouter.get("/funnel", async (req, res) => {
     // Average time in funnel per status (days since created_at)
     const avgTimeRows = await db.select({
       status: leads.status,
-      avgDays: sql<number>`EXTRACT(EPOCH FROM (now() - avg(${leads.createdAt}))) / 86400`,
+      avgDays: sql<number>`avg(EXTRACT(EPOCH FROM (now() - ${leads.createdAt}))) / 86400`,
     }).from(leads)
       .where(and(eq(leads.tenantId, tenantId), sql`${leads.status} != 'won'`))
       .groupBy(leads.status);

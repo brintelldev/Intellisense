@@ -51,7 +51,7 @@ const columns: ColumnDef<Customer>[] = [
     width: "13%",
     render: (row) => (
       <span className="font-medium text-slate-700 tabular-nums text-sm">
-        R$ {row.revenue.toLocaleString("pt-BR")}
+        R$ {(row.revenue ?? 0).toLocaleString("pt-BR")}
       </span>
     ),
   },
@@ -76,7 +76,7 @@ const columns: ColumnDef<Customer>[] = [
     width: "11%",
     render: (row) => (
       <span className="text-sm font-bold tabular-nums" style={{ color: churnColor(row.churnProbability) }}>
-        {(row.churnProbability * 100).toFixed(0)}%
+        {((row.churnProbability ?? 0) * 100).toFixed(0)}%
       </span>
     ),
   },

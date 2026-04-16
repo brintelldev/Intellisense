@@ -20,7 +20,7 @@ export function FunnelAlertCards({ alerts }: Props) {
   return (
     <div className="grid grid-cols-3 gap-4">
       {alerts.map((alert) => {
-        const cfg = SEVERITY_CONFIG[alert.severity];
+        const cfg = SEVERITY_CONFIG[alert.severity] ?? SEVERITY_CONFIG.info;
         return (
           <div key={alert.id} className={`rounded-xl p-4 border ${cfg.bg} flex gap-3`}>
             <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${cfg.dot}`} />
