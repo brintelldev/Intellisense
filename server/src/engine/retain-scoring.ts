@@ -343,7 +343,8 @@ export async function runRetainPredictions(tenantId: string, snapshotDate?: stri
       })
       .where(eq(customers.id, customer.id));
 
-    // Insert new active prediction
+    // Insert new active prediction — inherits sourceUploadId from customer
+    // so "remove upload" can cascade into its derived predictions.
     await db.insert(retainPredictions).values({
       tenantId,
       customerId: customer.id,
@@ -353,6 +354,7 @@ export async function runRetainPredictions(tenantId: string, snapshotDate?: stri
       shapValues,
       recommendedAction,
       isActive: true,
+      sourceUploadId: customer.sourceUploadId ?? null,
     });
 
     // Save score history snapshot
@@ -603,6 +605,7 @@ export async function generateAlerts(tenantId: string): Promise<{
         type: alert.type,
         message: alert.message,
         severity: alert.severity,
+        sourceUploadId: customer.sourceUploadId ?? null,
       });
       alertsGenerated++;
     }

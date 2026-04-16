@@ -3,11 +3,13 @@ import { useLocation } from "wouter";
 import { ColumnMapper } from "../../../shared/components/ColumnMapper";
 import { Progress } from "../../../shared/components/ui/progress";
 import { LoadingState } from "../../../shared/components/LoadingState";
+import { ConfirmDialog } from "../../../shared/components/ConfirmDialog";
 import {
   useRetainUploads,
   useUploadRetainCSV,
   useSuggestRetainMapping,
   usePreviewRetainUpload,
+  useDeleteRetainUpload,
 } from "../../../shared/hooks/useRetain";
 
 const SYSTEM_FIELDS = [
@@ -84,6 +86,9 @@ export default function RetainUploadPage() {
   const uploadMutation = useUploadRetainCSV();
   const suggestMappingMutation = useSuggestRetainMapping();
   const previewMutation = usePreviewRetainUpload();
+  const deleteMutation = useDeleteRetainUpload();
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; filename: string } | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const [step, setStep] = useState<Step>("upload");
   const [filename, setFilename] = useState("");
@@ -508,19 +513,24 @@ export default function RetainUploadPage() {
         <div className="px-5 py-4 border-b border-slate-100">
           <h3 className="font-semibold text-slate-800">Uploads Anteriores</h3>
         </div>
+        {deleteError && (
+          <div className="mx-5 mt-3 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+            {deleteError}
+          </div>
+        )}
         <table className="w-full text-sm">
           <thead className="bg-slate-50">
             <tr>
-              {["Arquivo", "Data", "Registros", "Status"].map(h => (
+              {["Arquivo", "Data", "Registros", "Status", "Ações"].map(h => (
                 <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
             {uploadsLoading ? (
-              <tr><td colSpan={4} className="p-4"><LoadingState rows={3} /></td></tr>
+              <tr><td colSpan={5} className="p-4"><LoadingState rows={3} /></td></tr>
             ) : uploads.length === 0 ? (
-              <tr><td colSpan={4} className="p-4 text-center text-sm text-slate-400">Nenhum upload ainda</td></tr>
+              <tr><td colSpan={5} className="p-4 text-center text-sm text-slate-400">Nenhum upload ainda</td></tr>
             ) : uploads.map((u: any) => (
               <tr key={u.id} className="hover:bg-slate-50">
                 <td className="px-4 py-3 font-medium text-slate-800">{u.filename}</td>
@@ -532,11 +542,51 @@ export default function RetainUploadPage() {
                   {u.status === "failed" && <span className="text-xs bg-red-100 text-red-700 px-2.5 py-0.5 rounded-full font-medium">Falhou</span>}
                   {u.status === "pending" && <span className="text-xs bg-slate-100 text-slate-600 px-2.5 py-0.5 rounded-full font-medium">Pendente</span>}
                 </td>
+                <td className="px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={() => { setDeleteError(null); setPendingDelete({ id: u.id, filename: u.filename }); }}
+                    disabled={u.status === "processing"}
+                    className="text-xs font-medium text-red-600 hover:text-red-700 hover:underline disabled:opacity-40 disabled:no-underline disabled:cursor-not-allowed"
+                  >
+                    Remover
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title="Remover este upload?"
+        variant="danger"
+        confirmLabel="Remover"
+        isPending={deleteMutation.isPending}
+        message={
+          <>
+            <p>
+              Isso apagará o registro do upload <strong>{pendingDelete?.filename}</strong> e{" "}
+              <strong>todos os clientes, previsões e alertas criados por ele</strong>.
+            </p>
+            <p className="mt-2 text-xs text-slate-500">
+              Clientes que foram apenas atualizados por este upload (não criados) permanecem. Esta ação não pode ser desfeita.
+            </p>
+          </>
+        }
+        onCancel={() => { if (!deleteMutation.isPending) setPendingDelete(null); }}
+        onConfirm={() => {
+          if (!pendingDelete) return;
+          deleteMutation.mutate(pendingDelete.id, {
+            onSuccess: () => setPendingDelete(null),
+            onError: (err: any) => {
+              setDeleteError(err?.message ?? "Falha ao remover upload");
+              setPendingDelete(null);
+            },
+          });
+        }}
+      />
     </div>
   );
 }

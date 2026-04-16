@@ -2,8 +2,9 @@ import { useState, useRef } from "react";
 import { useLocation } from "wouter";
 import { ColumnMapper } from "../../../shared/components/ColumnMapper";
 import { Progress } from "../../../shared/components/ui/progress";
-import { useObtainUploads, useUploadObtainCSV, useSuggestObtainMapping } from "../../../shared/hooks/useObtain";
+import { useObtainUploads, useUploadObtainCSV, useSuggestObtainMapping, useDeleteObtainUpload } from "../../../shared/hooks/useObtain";
 import { LoadingState } from "../../../shared/components/LoadingState";
+import { ConfirmDialog } from "../../../shared/components/ConfirmDialog";
 
 const SYSTEM_FIELDS = [
   { key: "id", label: "Identificador do lead", required: true },
@@ -48,6 +49,9 @@ export default function ObtainUploadPage() {
   const { data: apiUploads, isLoading: loadingUploads } = useObtainUploads();
   const uploadMutation = useUploadObtainCSV();
   const suggestMappingMutation = useSuggestObtainMapping();
+  const deleteMutation = useDeleteObtainUpload();
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; filename: string } | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const [step, setStep] = useState<Step>("upload");
   const [filename, setFilename] = useState("");
@@ -317,6 +321,11 @@ export default function ObtainUploadPage() {
         <div className="px-4 py-3 border-b border-slate-100">
           <h3 className="font-semibold text-slate-700 text-sm">Histórico de Importações</h3>
         </div>
+        {deleteError && (
+          <div className="mx-4 mt-3 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+            {deleteError}
+          </div>
+        )}
         {loadingUploads ? <div className="p-4"><LoadingState rows={3} /></div> : (
         <table className="w-full">
           <thead>
@@ -325,11 +334,12 @@ export default function ObtainUploadPage() {
               <th className="text-right text-xs font-semibold text-slate-500 px-4 py-3">Data</th>
               <th className="text-right text-xs font-semibold text-slate-500 px-4 py-3">Leads</th>
               <th className="text-right text-xs font-semibold text-slate-500 px-4 py-3">Status</th>
+              <th className="text-right text-xs font-semibold text-slate-500 px-4 py-3">Ações</th>
             </tr>
           </thead>
           <tbody>
             {uploads.length === 0 ? (
-              <tr><td colSpan={4} className="px-4 py-6 text-center text-sm text-slate-400">Nenhum upload ainda</td></tr>
+              <tr><td colSpan={5} className="px-4 py-6 text-center text-sm text-slate-400">Nenhum upload ainda</td></tr>
             ) : uploads.map((u: any) => (
               <tr key={u.id} className="border-t border-slate-50">
                 <td className="px-4 py-3 text-sm text-slate-700">{u.filename}</td>
@@ -341,12 +351,52 @@ export default function ObtainUploadPage() {
                   {u.status === "failed" && <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">Falhou</span>}
                   {u.status === "pending" && <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium">Pendente</span>}
                 </td>
+                <td className="text-right px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={() => { setDeleteError(null); setPendingDelete({ id: u.id, filename: u.filename }); }}
+                    disabled={u.status === "processing"}
+                    className="text-xs font-medium text-red-600 hover:text-red-700 hover:underline disabled:opacity-40 disabled:no-underline disabled:cursor-not-allowed"
+                  >
+                    Remover
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
         )}
       </div>
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title="Remover este upload?"
+        variant="danger"
+        confirmLabel="Remover"
+        isPending={deleteMutation.isPending}
+        message={
+          <>
+            <p>
+              Isso apagará o registro do upload <strong>{pendingDelete?.filename}</strong> e{" "}
+              <strong>todos os leads e scores criados por ele</strong>.
+            </p>
+            <p className="mt-2 text-xs text-slate-500">
+              Leads apenas atualizados por este upload (não criados) permanecem. Esta ação não pode ser desfeita.
+            </p>
+          </>
+        }
+        onCancel={() => { if (!deleteMutation.isPending) setPendingDelete(null); }}
+        onConfirm={() => {
+          if (!pendingDelete) return;
+          deleteMutation.mutate(pendingDelete.id, {
+            onSuccess: () => setPendingDelete(null),
+            onError: (err: any) => {
+              setDeleteError(err?.message ?? "Falha ao remover upload");
+              setPendingDelete(null);
+            },
+          });
+        }}
+      />
     </div>
   );
 }

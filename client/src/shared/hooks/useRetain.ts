@@ -178,6 +178,22 @@ export function useMarkCustomerChurned() {
   });
 }
 
+// ─── Delete Retain Upload ──────────────────────────────────────────────────
+export interface RetainUploadDeleteResult {
+  deleted: { customers: number; predictions: number; alerts: number; upload: boolean };
+}
+export function useDeleteRetainUpload() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (uploadId: string) =>
+      api.delete<RetainUploadDeleteResult>(`/retain/uploads/${uploadId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["retain"] });
+      qc.invalidateQueries({ queryKey: ["data-freshness"] });
+    },
+  });
+}
+
 // ─── Revenue Analytics ─────────────────────────────────────────────────────
 export function useRetainRevenueAnalytics() {
   return useQuery({

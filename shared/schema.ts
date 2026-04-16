@@ -130,6 +130,7 @@ export const customers = pgTable("customers", {
   servicesCount: integer("services_count"),
 
   churnDate: date("churn_date"),
+  sourceUploadId: uuid("source_upload_id").references(() => retainUploads.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => ({
@@ -137,6 +138,7 @@ export const customers = pgTable("customers", {
   tenantRiskIdx: index("customers_tenant_risk_idx").on(t.tenantId, t.riskLevel),
   tenantSegmentIdx: index("customers_tenant_segment_idx").on(t.tenantId, t.segment),
   tenantCodeUniq: uniqueIndex("customers_tenant_code_uniq").on(t.tenantId, t.customerCode),
+  sourceUploadIdx: index("customers_source_upload_idx").on(t.sourceUploadId),
 }));
 
 export const retainPredictions = pgTable("retain_predictions", {
@@ -150,10 +152,12 @@ export const retainPredictions = pgTable("retain_predictions", {
   recommendedAction: text("recommended_action"),
   modelId: uuid("model_id"),
   isActive: boolean("is_active").notNull().default(true),
+  sourceUploadId: uuid("source_upload_id").references(() => retainUploads.id),
   predictedAt: timestamp("predicted_at").defaultNow().notNull(),
 }, (t) => ({
   tenantIdx: index("retain_predictions_tenant_idx").on(t.tenantId),
   customerIdx: index("retain_predictions_customer_idx").on(t.customerId),
+  sourceUploadIdx: index("retain_predictions_source_upload_idx").on(t.sourceUploadId),
 }));
 
 export const retainChurnCauses = pgTable("retain_churn_causes", {
@@ -247,11 +251,13 @@ export const leads = pgTable("leads", {
   status: leadStatusEnum("status").default("new"),
   campaignId: uuid("campaign_id").references(() => obtainCampaigns.id),
   assignedTo: uuid("assigned_to").references(() => users.id),
+  sourceUploadId: uuid("source_upload_id").references(() => obtainUploads.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => ({
   tenantIdx: index("leads_tenant_idx").on(t.tenantId),
   tenantStatusIdx: index("leads_tenant_status_idx").on(t.tenantId, t.status),
+  sourceUploadIdx: index("leads_source_upload_idx").on(t.sourceUploadId),
 }));
 
 export const obtainScores = pgTable("obtain_scores", {
@@ -266,11 +272,13 @@ export const obtainScores = pgTable("obtain_scores", {
   recommendedAction: text("recommended_action"),
   recommendedOffer: text("recommended_offer"),
   modelVersion: varchar("model_version", { length: 50 }),
+  sourceUploadId: uuid("source_upload_id").references(() => obtainUploads.id),
   scoredAt: timestamp("scored_at").defaultNow().notNull(),
 }, (t) => ({
   tenantIdx: index("obtain_scores_tenant_idx").on(t.tenantId),
   leadIdx: index("obtain_scores_lead_idx").on(t.leadId),
   tenantTierIdx: index("obtain_scores_tenant_tier_idx").on(t.tenantId, t.riskTier),
+  sourceUploadIdx: index("obtain_scores_source_upload_idx").on(t.sourceUploadId),
 }));
 
 export const obtainIcpClusters = pgTable("obtain_icp_clusters", {
@@ -378,10 +386,12 @@ export const retainAlerts = pgTable("retain_alerts", {
   message: text("message").notNull(),
   severity: alertSeverityEnum("severity").notNull(),
   isRead: boolean("is_read").notNull().default(false),
+  sourceUploadId: uuid("source_upload_id").references(() => retainUploads.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => ({
   tenantIdx: index("retain_alerts_tenant_idx").on(t.tenantId),
   tenantUnreadIdx: index("retain_alerts_tenant_unread_idx").on(t.tenantId, t.isRead),
+  sourceUploadIdx: index("retain_alerts_source_upload_idx").on(t.sourceUploadId),
 }));
 
 export const customerScoreHistory = pgTable("customer_score_history", {

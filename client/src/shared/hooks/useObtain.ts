@@ -68,6 +68,22 @@ export function useObtainUploads() {
   });
 }
 
+// ─── Delete Obtain Upload ────────────────────────────────────────────────────
+export interface ObtainUploadDeleteResult {
+  deleted: { leads: number; scores: number; upload: boolean };
+}
+export function useDeleteObtainUpload() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (uploadId: string) =>
+      api.delete<ObtainUploadDeleteResult>(`/obtain/uploads/${uploadId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["obtain"] });
+      qc.invalidateQueries({ queryKey: ["data-freshness"] });
+    },
+  });
+}
+
 // ─── Create Lead Action ──────────────────────────────────────────────────────
 export function useCreateLeadAction() {
   const qc = useQueryClient();

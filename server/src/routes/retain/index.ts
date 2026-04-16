@@ -4,7 +4,7 @@ import os from "os";
 import fs from "fs";
 import Papa from "papaparse";
 import { db } from "../../db.js";
-import { eq, and, desc, asc, ilike, sql, SQL } from "drizzle-orm";
+import { eq, and, desc, asc, ilike, sql, inArray, SQL } from "drizzle-orm";
 import {
   customers, retainPredictions, retainChurnCauses, retainAnalytics,
   retainActions, retainUploads, retainAlerts, customerScoreHistory,
@@ -578,6 +578,97 @@ retainRouter.get("/uploads", async (req, res) => {
   }
 });
 
+// ─── DELETE /uploads/:id ─────────────────────────────────────────────────────
+// Removes the upload audit row plus every customer/prediction/alert stamped
+// with sourceUploadId = :id. Rows with NULL sourceUploadId (pre-migration or
+// created by other uploads) are untouched.
+retainRouter.delete("/uploads/:id", async (req, res) => {
+  const tenantId = req.tenantId!;
+  const uploadId = req.params.id;
+  if (!UUID_RE.test(uploadId)) {
+    return res.status(400).json({ error: "ID inválido" });
+  }
+  try {
+    const [existing] = await db.select({ id: retainUploads.id })
+      .from(retainUploads)
+      .where(and(eq(retainUploads.id, uploadId), eq(retainUploads.tenantId, tenantId)))
+      .limit(1);
+    if (!existing) {
+      return res.status(404).json({ error: "Upload não encontrado" });
+    }
+
+    const result = await db.transaction(async (tx) => {
+      // 1. Identify customers that will be removed so we can clean their history
+      const toRemove = await tx.select({ id: customers.id })
+        .from(customers)
+        .where(and(
+          eq(customers.tenantId, tenantId),
+          eq(customers.sourceUploadId, uploadId),
+        ));
+      const customerIds = toRemove.map((c) => c.id);
+
+      const delAlerts = await tx.delete(retainAlerts)
+        .where(and(eq(retainAlerts.tenantId, tenantId), eq(retainAlerts.sourceUploadId, uploadId)))
+        .returning({ id: retainAlerts.id });
+      const delPreds = await tx.delete(retainPredictions)
+        .where(and(eq(retainPredictions.tenantId, tenantId), eq(retainPredictions.sourceUploadId, uploadId)))
+        .returning({ id: retainPredictions.id });
+
+      // Clean downstream references tied to the customers being removed.
+      // These tables don't carry sourceUploadId but would block deletion via FK.
+      if (customerIds.length > 0) {
+        await tx.delete(retainAlerts)
+          .where(and(
+            eq(retainAlerts.tenantId, tenantId),
+            inArray(retainAlerts.customerId, customerIds),
+          ));
+        await tx.delete(retainPredictions)
+          .where(and(
+            eq(retainPredictions.tenantId, tenantId),
+            inArray(retainPredictions.customerId, customerIds),
+          ));
+        await tx.delete(customerScoreHistory)
+          .where(and(
+            eq(customerScoreHistory.tenantId, tenantId),
+            inArray(customerScoreHistory.customerId, customerIds),
+          ));
+        await tx.delete(customerNotes)
+          .where(inArray(customerNotes.customerId, customerIds));
+        await tx.delete(retainActions)
+          .where(and(
+            eq(retainActions.tenantId, tenantId),
+            inArray(retainActions.customerId, customerIds),
+          ));
+      }
+
+      const delCustomers = await tx.delete(customers)
+        .where(and(eq(customers.tenantId, tenantId), eq(customers.sourceUploadId, uploadId)))
+        .returning({ id: customers.id });
+
+      await tx.delete(retainUploads)
+        .where(and(eq(retainUploads.id, uploadId), eq(retainUploads.tenantId, tenantId)));
+
+      return {
+        alerts: delAlerts.length,
+        predictions: delPreds.length,
+        customers: delCustomers.length,
+      };
+    });
+
+    res.json({
+      deleted: {
+        customers: result.customers,
+        predictions: result.predictions,
+        alerts: result.alerts,
+        upload: true,
+      },
+    });
+  } catch (err: any) {
+    console.error("Retain delete upload error:", err);
+    res.status(500).json({ error: "Erro ao remover upload" });
+  }
+});
+
 // ─── POST /uploads ───────────────────────────────────────────────────────────
 
 retainRouter.post("/uploads", upload.single("file"), async (req, res) => {
@@ -739,7 +830,7 @@ retainRouter.post("/uploads", upload.single("file"), async (req, res) => {
           rowsUpdated++;
         } else {
           const [inserted] = await db.insert(customers)
-            .values({ ...customerData, status: "active" as const })
+            .values({ ...customerData, status: "active" as const, sourceUploadId: uploadRow!.id })
             .returning({ id: customers.id });
           if (customerCode) existingByCode.set(customerCode, inserted.id);
           if (customerEmailLower) existingByEmail.set(customerEmailLower, inserted.id);

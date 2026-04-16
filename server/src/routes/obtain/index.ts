@@ -4,7 +4,7 @@ import os from "os";
 import fs from "fs";
 import Papa from "papaparse";
 import { db } from "../../db.js";
-import { eq, and, desc, asc, ilike, sql, SQL } from "drizzle-orm";
+import { eq, and, desc, asc, ilike, sql, inArray, SQL } from "drizzle-orm";
 import {
   leads, obtainScores, obtainCampaigns, obtainCampaignRoi,
   obtainIcpClusters, obtainFunnelMetrics, obtainLeadActions, obtainUploads,
@@ -776,6 +776,87 @@ obtainRouter.get("/uploads", async (req, res) => {
   }
 });
 
+// ─── DELETE /uploads/:id ─────────────────────────────────────────────────────
+// Removes upload audit row plus every lead/score stamped with this uploadId.
+// Leads with NULL sourceUploadId (pre-migration) are untouched.
+obtainRouter.delete("/uploads/:id", async (req, res) => {
+  const tenantId = req.tenantId!;
+  const uploadId = req.params.id;
+  if (!UUID_RE.test(uploadId)) {
+    return res.status(400).json({ error: "ID inválido" });
+  }
+  try {
+    const [existing] = await db.select({ id: obtainUploads.id })
+      .from(obtainUploads)
+      .where(and(eq(obtainUploads.id, uploadId), eq(obtainUploads.tenantId, tenantId)))
+      .limit(1);
+    if (!existing) {
+      return res.status(404).json({ error: "Upload não encontrado" });
+    }
+
+    const result = await db.transaction(async (tx) => {
+      const toRemove = await tx.select({ id: leads.id })
+        .from(leads)
+        .where(and(
+          eq(leads.tenantId, tenantId),
+          eq(leads.sourceUploadId, uploadId),
+        ));
+      const leadIds = toRemove.map((l) => l.id);
+
+      const delScores = await tx.delete(obtainScores)
+        .where(and(eq(obtainScores.tenantId, tenantId), eq(obtainScores.sourceUploadId, uploadId)))
+        .returning({ id: obtainScores.id });
+
+      if (leadIds.length > 0) {
+        // Clean up all FK references to the leads being deleted
+        await tx.delete(obtainScores)
+          .where(and(
+            eq(obtainScores.tenantId, tenantId),
+            inArray(obtainScores.leadId, leadIds),
+          ));
+        await tx.delete(obtainAlerts)
+          .where(and(
+            eq(obtainAlerts.tenantId, tenantId),
+            inArray(obtainAlerts.leadId, leadIds),
+          ));
+        await tx.delete(obtainLeadActions)
+          .where(and(
+            eq(obtainLeadActions.tenantId, tenantId),
+            inArray(obtainLeadActions.leadId, leadIds),
+          ));
+        await tx.delete(leadScoreHistory)
+          .where(and(
+            eq(leadScoreHistory.tenantId, tenantId),
+            inArray(leadScoreHistory.leadId, leadIds),
+          ));
+      }
+
+      const delLeads = await tx.delete(leads)
+        .where(and(eq(leads.tenantId, tenantId), eq(leads.sourceUploadId, uploadId)))
+        .returning({ id: leads.id });
+
+      await tx.delete(obtainUploads)
+        .where(and(eq(obtainUploads.id, uploadId), eq(obtainUploads.tenantId, tenantId)));
+
+      return {
+        scores: delScores.length,
+        leads: delLeads.length,
+      };
+    });
+
+    res.json({
+      deleted: {
+        leads: result.leads,
+        scores: result.scores,
+        upload: true,
+      },
+    });
+  } catch (err: any) {
+    console.error("Obtain delete upload error:", err);
+    res.status(500).json({ error: "Erro ao remover upload" });
+  }
+});
+
 // ─── POST /uploads ───────────────────────────────────────────────────────────
 const VALID_COMPANY_SIZES = ["micro", "small", "medium", "large", "enterprise"] as const;
 const VALID_LEAD_SOURCES = [
@@ -892,7 +973,7 @@ obtainRouter.post("/uploads", upload.single("file"), async (req, res) => {
           rowsUpdated++;
         } else {
           const [inserted] = await db.insert(leads)
-            .values({ ...leadData, status: "new" as const })
+            .values({ ...leadData, status: "new" as const, sourceUploadId: uploadRow!.id })
             .returning({ id: leads.id });
           if (email) existingByEmail.set(email, inserted.id);
           rowsCreated++;

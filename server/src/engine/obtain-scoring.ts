@@ -421,6 +421,7 @@ export async function runObtainScoring(tenantId: string): Promise<{
         })
         .where(eq(obtainScores.id, existingScore.id));
     } else {
+      // Inherits sourceUploadId from lead so "remove upload" cascades cleanly.
       await db.insert(obtainScores).values({
         tenantId,
         leadId: lead.id,
@@ -430,6 +431,7 @@ export async function runObtainScoring(tenantId: string): Promise<{
         ltvPrediction,
         shapValues,
         recommendedAction,
+        sourceUploadId: lead.sourceUploadId ?? null,
       });
     }
 
