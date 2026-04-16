@@ -10,11 +10,12 @@ import {
   obtainIcpClusters, obtainFunnelMetrics, obtainLeadActions, obtainUploads,
   obtainAlerts, leadScoreHistory, customers,
 } from "../../../../shared/schema.js";
-import { runObtainScoring, generateObtainAlerts, generateLeadNarrative } from "../../engine/obtain-scoring.js";
+import { runObtainScoring, generateObtainAlerts, generateLeadNarrative, generateRecommendedOffer, generateSalesCadence } from "../../engine/obtain-scoring.js";
 import { generateIcpClusters } from "../../engine/icp-clustering.js";
 import { suggestMapping } from "../../engine/column-mapper.js";
 import { readCsvFile } from "../../lib/csv-reader.js";
 import { parseNumber } from "../../lib/value-normalizer.js";
+import { formatTimeAgo } from "../../lib/time-utils.js";
 
 export const obtainRouter = Router();
 const upload = multer({ storage: multer.diskStorage({ destination: os.tmpdir() }), limits: { fileSize: 50 * 1024 * 1024 } });
@@ -54,6 +55,112 @@ obtainRouter.get("/dashboard", async (req, res) => {
     const avgLtv = Math.round(ltvRow?.avgLtv ?? 0);
     const avgCac = Math.round(avgLtv * 0.007);
 
+    // Pipeline Health Score (100 pts)
+    const totalLeadsForHealth = leadCount.count;
+
+    // Quality score: % hot+warm (40pts)
+    const [warmCountForHealth] = await db.select({ count: sql<number>`count(*)::int` })
+      .from(obtainScores)
+      .where(and(eq(obtainScores.tenantId, tenantId), eq(obtainScores.riskTier, "warm")));
+    const hotWarmCount = hotCount.count + (warmCountForHealth?.count ?? 0);
+    const qualityScore = totalLeadsForHealth > 0
+      ? (hotWarmCount / totalLeadsForHealth) * 40
+      : 0;
+
+    // Conversion score (25pts) - normalize 0-100% range
+    const conversionScore = conversionRate * 25;
+
+    // Velocity score (20pts) - inverse of avg days in funnel (normalize: 0 days=20pts, 90days=0pts)
+    const [avgFunnelTime] = await db.select({
+      avgDays: sql<number>`EXTRACT(EPOCH FROM (now() - avg(${leads.createdAt}))) / 86400`,
+    }).from(leads).where(and(eq(leads.tenantId, tenantId), sql`${leads.status} != 'won'`));
+    const avgDays = Math.max(0, avgFunnelTime?.avgDays ?? 30);
+    const velocityScore = Math.max(0, (1 - avgDays / 90)) * 20;
+
+    // Diversification score (15pts) - Shannon entropy of sources
+    const sourceDiversityRows = await db.select({
+      count: sql<number>`count(*)::int`,
+    }).from(leads)
+      .where(eq(leads.tenantId, tenantId))
+      .groupBy(leads.source);
+    const totalForEntropy = sourceDiversityRows.reduce((s, r) => s + r.count, 0);
+    let entropy = 0;
+    for (const row of sourceDiversityRows) {
+      const p = row.count / (totalForEntropy || 1);
+      if (p > 0) entropy -= p * Math.log2(p);
+    }
+    const maxEntropy = Math.log2(Math.max(sourceDiversityRows.length, 1));
+    const diversityScore = maxEntropy > 0 ? (entropy / maxEntropy) * 15 : 0;
+
+    const pipelineHealthScore = Math.round(qualityScore + conversionScore + velocityScore + diversityScore);
+
+    // Identify weakest component
+    const components = [
+      { name: "Qualidade (hot%)", score: Math.round(qualityScore), max: 40 },
+      { name: "Conversão", score: Math.round(conversionScore), max: 25 },
+      { name: "Velocidade", score: Math.round(velocityScore), max: 20 },
+      { name: "Diversificação", score: Math.round(diversityScore), max: 15 },
+    ];
+    const weakest = components.reduce((a, b) => (a.score / a.max) < (b.score / b.max) ? a : b);
+
+    // Narrative based on weakest component
+    const healthNarratives: Record<string, string> = {
+      "Qualidade (hot%)": "Seu pipeline precisa de leads de maior qualidade. Foque em canais com maior taxa de conversão.",
+      "Conversão": "Sua taxa de conversão pode melhorar. Revise leads parados no estágio Demo ou Proposta.",
+      "Velocidade": "Leads estão demorando muito para avançar no funil. Priorize follow-ups nos leads hot parados.",
+      "Diversificação": "Seu pipeline depende muito de um único canal. Diversifique as fontes de leads.",
+    };
+    const pipelineHealthNarrative = healthNarratives[weakest.name] ?? "Pipeline com boa saúde geral. Continue monitorando.";
+
+    const pipelineHealth = {
+      score: pipelineHealthScore,
+      label: pipelineHealthScore >= 75 ? "Saudável" : pipelineHealthScore >= 50 ? "Atenção" : "Crítico",
+      components,
+      narrative: pipelineHealthNarrative,
+      weakestComponent: weakest.name,
+    };
+
+    // Pipeline Projection (30/60/90 days)
+    const projectionRows = await db.select({
+      status: leads.status,
+      count: sql<number>`count(*)::int`,
+      totalLtv: sql<number>`coalesce(sum(${obtainScores.ltvPrediction}), 0)::real`,
+      avgConversionProb: sql<number>`coalesce(avg(${obtainScores.conversionProbability}), 0)::real`,
+    }).from(leads)
+      .innerJoin(obtainScores, eq(obtainScores.leadId, leads.id))
+      .where(and(
+        eq(leads.tenantId, tenantId),
+        sql`${leads.status} NOT IN ('won', 'lost')`,
+      ))
+      .groupBy(leads.status);
+
+    const projMap = Object.fromEntries(projectionRows.map(r => [r.status, r]));
+
+    // 30d: leads in "proposal" stage
+    const proposal30 = projMap["proposal"];
+    const proj30 = Math.round((proposal30?.totalLtv ?? 0) * (proposal30?.avgConversionProb ?? 0.3));
+
+    // 60d: proposal + contacted
+    const contacted60 = projMap["contacted"];
+    const proj60 = proj30 + Math.round((contacted60?.totalLtv ?? 0) * (contacted60?.avgConversionProb ?? 0.2));
+
+    // 90d: all active stages
+    const proj90 = projectionRows.reduce((sum, r) => {
+      return sum + Math.round(r.totalLtv * r.avgConversionProb);
+    }, 0);
+
+    const pipelineProjection = {
+      totalPipeline: Math.round(Number(ltvRow?.totalLtv ?? 0)),
+      projections: [
+        { days: 30, value: proj30, description: `${proposal30?.count ?? 0} leads em Proposta` },
+        { days: 60, value: proj60, description: `leads em Demo + Proposta` },
+        { days: 90, value: proj90, description: "pipeline completo × prob. conversão" },
+      ],
+      topFocusAction: proposal30 && (proposal30.count ?? 0) > 0
+        ? `Foco nos ${proposal30.count} leads hot em Proposta pode acelerar ${proj30 >= 1000000 ? `R$${(proj30/1000000).toFixed(1)}M` : `R$${Math.round(proj30/1000)}K`} em fechamento este mês`
+        : "Mova leads qualificados para o estágio de Proposta para acelerar fechamentos",
+    };
+
     res.json({
       kpis: {
         totalLeads: leadCount.count,
@@ -69,6 +176,8 @@ obtainRouter.get("/dashboard", async (req, res) => {
         avgAcquisitionDays: null,
         avgAcquisitionDaysChange: null,
       },
+      pipelineHealth,
+      pipelineProjection,
     });
   } catch (err) {
     console.error("Obtain dashboard error:", err);
@@ -355,6 +464,26 @@ obtainRouter.get("/leads/:id", async (req, res) => {
       similarCustomers,
     );
 
+    // Sales cadence
+    const shapValuesForCadence = (row.score?.shapValues as any[]) ?? [];
+    const topPositiveFactor = shapValuesForCadence.find((s: any) => s.direction === "positive");
+    const salesCadence = generateSalesCadence(
+      row.score?.riskTier ?? "cold",
+      row.lead.companySize ?? null,
+      row.lead.industry ?? null,
+      topPositiveFactor?.label ?? null,
+      row.lead.source ?? null,
+    );
+
+    // Fix recommendedOffer: use generateRecommendedOffer if empty
+    const recommendedOffer = (row.score?.recommendedOffer && row.score.recommendedOffer.trim() !== "")
+      ? row.score.recommendedOffer
+      : generateRecommendedOffer(
+          row.score?.riskTier ?? "cold",
+          row.lead.companySize ?? null,
+          row.lead.industry ?? null,
+        );
+
     res.json({
       id: row.lead.id,
       name: row.lead.name,
@@ -374,13 +503,14 @@ obtainRouter.get("/leads/:id", async (req, res) => {
       shapValues,
       baseProbability: 0.24,
       recommendedAction: row.score?.recommendedAction ?? "",
-      recommendedOffer: row.score?.recommendedOffer ?? "",
+      recommendedOffer,
       campaign: row.campaign?.name ?? "",
       enteredAt: row.lead.createdAt?.toISOString() ?? "",
       narrative,
       icpCluster,
       similarCustomers,
       channelPerformance,
+      salesCadence,
     });
   } catch (err) {
     console.error("Obtain lead detail error:", err);
@@ -452,6 +582,35 @@ obtainRouter.get("/funnel", async (req, res) => {
 
     const ltvMap = Object.fromEntries(ltvByStatus.map(r => [r.status, r.avgLtv]));
 
+    // Hot leads stuck in each stage > 7 days
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const sevenDaysAgoStr = sevenDaysAgo.toISOString();
+
+    const hotStuckRows = await db.select({
+      status: leads.status,
+      count: sql<number>`count(*)::int`,
+    }).from(leads)
+      .innerJoin(obtainScores, eq(obtainScores.leadId, leads.id))
+      .where(and(
+        eq(leads.tenantId, tenantId),
+        eq(obtainScores.riskTier, "hot"),
+        sql`${leads.updatedAt} < ${sevenDaysAgoStr}::timestamp`,
+      ))
+      .groupBy(leads.status);
+
+    const hotStuckMap = Object.fromEntries(hotStuckRows.map(r => [r.status, r.count]));
+
+    // Average time in funnel per status (days since created_at)
+    const avgTimeRows = await db.select({
+      status: leads.status,
+      avgDays: sql<number>`EXTRACT(EPOCH FROM (now() - avg(${leads.createdAt}))) / 86400`,
+    }).from(leads)
+      .where(and(eq(leads.tenantId, tenantId), sql`${leads.status} != 'won'`))
+      .groupBy(leads.status);
+
+    const avgTimeMap = Object.fromEntries(avgTimeRows.map(r => [r.status, Math.round(r.avgDays ?? 0)]));
+
     const STAGES = [
       { key: "new",        name: "Prospecção",   order: 1 },
       { key: "qualifying", name: "Qualificação",  order: 2 },
@@ -477,8 +636,8 @@ obtainRouter.get("/funnel", async (req, res) => {
         name: s.name,
         order: s.order,
         leadsCount: count,
-        hotLeadsStuck: 0,
-        avgTimeDays: [0, 5, 8, 18, 12][i],
+        hotLeadsStuck: hotStuckMap[s.key] ?? 0,
+        avgTimeDays: avgTimeMap[s.key] ?? 0,
         dropOffRate,
         conversionFromTop: Math.round((count / prospect) * 100),
         revenueAtRisk,
@@ -749,6 +908,59 @@ obtainRouter.post("/uploads", upload.single("file"), async (req, res) => {
     await generateIcpClusters(tenantId);
     const { alertsGenerated } = await generateObtainAlerts(tenantId);
 
+    // Intelligence summary
+    const [hotLeadsRows, warmLeadsRows, allLtvRow] = await Promise.all([
+      db.select({ lead: leads, score: obtainScores })
+        .from(leads).innerJoin(obtainScores, eq(obtainScores.leadId, leads.id))
+        .where(and(eq(leads.tenantId, tenantId), eq(obtainScores.riskTier, "hot")))
+        .orderBy(desc(obtainScores.score)).limit(3),
+      db.select({ count: sql<number>`count(*)::int` })
+        .from(obtainScores)
+        .where(and(eq(obtainScores.tenantId, tenantId), eq(obtainScores.riskTier, "warm"))),
+      db.select({ totalLtv: sql<number>`coalesce(sum(${obtainScores.ltvPrediction}), 0)::real` })
+        .from(obtainScores).where(eq(obtainScores.tenantId, tenantId)),
+    ]);
+
+    const topSourceRows = await db.select({
+      source: leads.source,
+      avgLtv: sql<number>`coalesce(avg(${obtainScores.ltvPrediction}), 0)::real`,
+      count: sql<number>`count(*)::int`,
+    }).from(leads)
+      .innerJoin(obtainScores, eq(obtainScores.leadId, leads.id))
+      .where(and(eq(leads.tenantId, tenantId), eq(obtainScores.riskTier, "hot")))
+      .groupBy(leads.source)
+      .orderBy(sql`avg(${obtainScores.ltvPrediction}) DESC`)
+      .limit(1);
+
+    const CHANNEL_LABELS_UPLOAD: Record<string, string> = {
+      referral: "Indicação de Clientes", event: "Feira/Evento",
+      paid_social: "LinkedIn Ads", paid_search: "Google Ads",
+      outbound: "Prospecção Outbound", organic: "Orgânico/SEO",
+      email: "Email Marketing", csv: "CSV Import", manual: "Manual", other: "Outros",
+    };
+
+    const intelligenceSummary = {
+      hotLeadsCount: hotLeadsRows.length,
+      warmLeadsCount: warmLeadsRows[0]?.count ?? 0,
+      totalLtvPipeline: Math.round(allLtvRow[0]?.totalLtv ?? 0),
+      bestChannel: topSourceRows[0]
+        ? {
+            name: CHANNEL_LABELS_UPLOAD[topSourceRows[0].source ?? "other"] ?? topSourceRows[0].source,
+            avgLtv: Math.round(topSourceRows[0].avgLtv ?? 0),
+            count: topSourceRows[0].count,
+          }
+        : null,
+      topHotLeads: hotLeadsRows.slice(0, 3).map(r => ({
+        id: r.lead.id,
+        name: r.lead.name,
+        company: r.lead.company,
+        industry: r.lead.industry,
+        score: r.score.score ?? 0,
+        ltvPrediction: r.score.ltvPrediction ?? 0,
+        recommendedAction: r.score.recommendedAction ?? "",
+      })),
+    };
+
     const [done] = await db.update(obtainUploads)
       .set({
         status: "completed",
@@ -765,6 +977,7 @@ obtainRouter.post("/uploads", upload.single("file"), async (req, res) => {
       ...done,
       scoresGenerated,
       alertsGenerated,
+      intelligenceSummary,
       errors: errors.slice(0, 20),
     });
   } catch (err: any) {
@@ -778,6 +991,219 @@ obtainRouter.post("/uploads", upload.single("file"), async (req, res) => {
     res.status(500).json({ error: "Erro ao processar upload" });
   } finally {
     if (file?.path) fs.unlink(file.path, () => {});
+  }
+});
+
+// ─── GET /win-patterns ──────────────────────────────────────────────────────
+obtainRouter.get("/win-patterns", async (req, res) => {
+  try {
+    const tenantId = req.tenantId!;
+
+    const [wonLeads, allLeads] = await Promise.all([
+      db.select({
+        industry: leads.industry,
+        companySize: leads.companySize,
+        source: leads.source,
+        score: obtainScores.score,
+        createdAt: leads.createdAt,
+        updatedAt: leads.updatedAt,
+      }).from(leads)
+        .leftJoin(obtainScores, eq(obtainScores.leadId, leads.id))
+        .where(and(
+          eq(leads.tenantId, tenantId),
+          eq(leads.status, "won"),
+        )),
+      db.select({ count: sql<number>`count(*)::int` })
+        .from(leads).where(eq(leads.tenantId, tenantId)),
+    ]);
+
+    const wonCount = wonLeads.length;
+    const totalCount = allLeads[0]?.count ?? 1;
+
+    if (wonCount === 0) {
+      return res.json({ wonCount: 0, patterns: [], insight: null });
+    }
+
+    // Compute frequency for each dimension
+    const industryCounts: Record<string, number> = {};
+    const sizeCounts: Record<string, number> = {};
+    const sourceCounts: Record<string, number> = {};
+    let totalScore = 0;
+    let totalTimeDays = 0;
+    let timeCount = 0;
+
+    for (const lead of wonLeads) {
+      if (lead.industry) industryCounts[lead.industry] = (industryCounts[lead.industry] ?? 0) + 1;
+      if (lead.companySize) sizeCounts[lead.companySize] = (sizeCounts[lead.companySize] ?? 0) + 1;
+      if (lead.source) sourceCounts[lead.source] = (sourceCounts[lead.source] ?? 0) + 1;
+      if (lead.score) totalScore += lead.score;
+      if (lead.createdAt && lead.updatedAt) {
+        const days = (new Date(lead.updatedAt).getTime() - new Date(lead.createdAt).getTime()) / 86400000;
+        if (days > 0 && days < 365) { totalTimeDays += days; timeCount++; }
+      }
+    }
+
+    // Top industries (top 2)
+    const topIndustries = Object.entries(industryCounts)
+      .sort((a, b) => b[1] - a[1]).slice(0, 2).map(([name, count]) => ({
+        name,
+        pct: Math.round((count / wonCount) * 100),
+      }));
+
+    // Top sizes (top 2)
+    const SIZE_LABELS: Record<string, string> = {
+      micro: "Micro", small: "Pequena", medium: "Média", large: "Grande", enterprise: "Enterprise",
+    };
+    const topSizes = Object.entries(sizeCounts)
+      .sort((a, b) => b[1] - a[1]).slice(0, 2).map(([name, count]) => ({
+        name: SIZE_LABELS[name] ?? name,
+        pct: Math.round((count / wonCount) * 100),
+      }));
+
+    // Top source
+    const CHANNEL_LABELS: Record<string, string> = {
+      referral: "Indicação de Clientes", event: "Feira/Evento",
+      paid_social: "LinkedIn Ads", paid_search: "Google Ads",
+      outbound: "Prospecção Outbound", organic: "Orgânico/SEO",
+      email: "Email Marketing", other: "Outros",
+    };
+    const topSource = Object.entries(sourceCounts)
+      .sort((a, b) => b[1] - a[1]).slice(0, 1).map(([name, count]) => ({
+        name: CHANNEL_LABELS[name] ?? name,
+        pct: Math.round((count / wonCount) * 100),
+      }))[0] ?? null;
+
+    const avgScore = wonCount > 0 ? Math.round(totalScore / wonCount) : 0;
+    const avgTimeDays = timeCount > 0 ? Math.round(totalTimeDays / timeCount) : null;
+
+    // Conversion rate multiplier (won vs total for top industry + size combo)
+    const overallConvRate = totalCount > 0 ? wonCount / totalCount : 0;
+    const topCombo = topIndustries[0] && topSizes[0];
+    let comboMultiple: number | null = null;
+    if (topCombo) {
+      const comboWon = wonLeads.filter(l =>
+        l.industry === topIndustries[0].name &&
+        (l.companySize === Object.keys(sizeCounts).sort((a, b) => sizeCounts[b]! - sizeCounts[a]!)[0])
+      ).length;
+      if (comboWon > 0 && overallConvRate > 0) {
+        const comboTotal = wonLeads.length; // simplified
+        comboMultiple = Math.round((comboWon / comboTotal / overallConvRate) * 10) / 10;
+      }
+    }
+
+    // Build insight text
+    let insight = `Analisando ${wonCount} leads convertidos: `;
+    if (topIndustries.length >= 2) {
+      insight += `${topIndustries[0].pct}% são do setor ${topIndustries[0].name} ou ${topIndustries[1].name}. `;
+    } else if (topIndustries.length === 1) {
+      insight += `${topIndustries[0].pct}% são do setor ${topIndustries[0].name}. `;
+    }
+    if (topSource) {
+      insight += `${topSource.pct}% vieram por ${topSource.name}. `;
+    }
+    if (topIndustries[0] && topSizes[0] && topSource) {
+      insight += `Leads que combinam ${topIndustries[0].name} + ${topSizes[0].name} + ${topSource.name} têm maior chance de converter.`;
+    }
+
+    res.json({
+      wonCount,
+      totalCount,
+      patterns: [
+        topIndustries.length > 0 ? {
+          type: "industry",
+          icon: "🏭",
+          label: topIndustries.map(i => `${i.pct}% ${i.name}`).join(" ou "),
+        } : null,
+        topSizes.length > 0 ? {
+          type: "size",
+          icon: "📏",
+          label: topSizes.map(s => `${s.pct}% porte ${s.name}`).join(" ou "),
+        } : null,
+        topSource ? {
+          type: "source",
+          icon: "🔗",
+          label: `${topSource.pct}% via ${topSource.name}`,
+        } : null,
+        avgScore > 0 ? {
+          type: "score",
+          icon: "⚡",
+          label: `Score médio na conversão: ${avgScore}/100`,
+        } : null,
+        avgTimeDays ? {
+          type: "time",
+          icon: "📅",
+          label: `Tempo médio até fechar: ${avgTimeDays} dias`,
+        } : null,
+      ].filter(Boolean),
+      insight,
+      comboMultiple,
+      topCombo: topIndustries[0] && topSizes[0] && topSource
+        ? `${topIndustries[0].name} + ${topSizes[0].name} + ${topSource.name}`
+        : null,
+    });
+  } catch (err) {
+    console.error("Win patterns error:", err);
+    res.status(500).json({ error: "Erro ao buscar padrões de sucesso" });
+  }
+});
+
+// ─── GET /channel-churn-comparison ──────────────────────────────────────────
+obtainRouter.get("/channel-churn-comparison", async (req, res) => {
+  try {
+    const tenantId = req.tenantId!;
+
+    // JOIN leads to customers by email to find which channel their customers came from
+    const channelData = await db.execute(sql`
+      SELECT
+        l.source,
+        COUNT(c.id) AS customer_count,
+        AVG(CASE WHEN c.status = 'churned' THEN 1.0 ELSE 0.0 END) AS churn_rate,
+        AVG(c.dim_revenue) AS avg_revenue
+      FROM leads l
+      INNER JOIN customers c ON lower(l.email) = lower(c.email)
+      WHERE l.tenant_id = ${tenantId}
+        AND c.tenant_id = ${tenantId}
+        AND l.source IS NOT NULL
+        AND l.email IS NOT NULL
+      GROUP BY l.source
+      HAVING COUNT(c.id) >= 2
+      ORDER BY churn_rate ASC
+    `);
+
+    const CHANNEL_LABELS: Record<string, string> = {
+      referral: "Indicação de Clientes", event: "Feira/Evento",
+      paid_social: "LinkedIn Ads", paid_search: "Google Ads",
+      outbound: "Prospecção Outbound", organic: "Orgânico/SEO",
+      email: "Email Marketing", other: "Outros",
+    };
+
+    const rows = (channelData.rows as any[]).map(r => ({
+      source: r.source,
+      sourceLabel: CHANNEL_LABELS[r.source] ?? r.source,
+      customerCount: parseInt(r.customer_count),
+      churnRate: Math.round(parseFloat(r.churn_rate) * 1000) / 10,
+      avgRevenue: Math.round(parseFloat(r.avg_revenue) || 0),
+    }));
+
+    if (rows.length < 2) {
+      return res.json({ rows: [], bestSource: null, worstSource: null, insight: null });
+    }
+
+    const bestSource = rows[0]; // lowest churn
+    const worstSource = rows[rows.length - 1]; // highest churn
+
+    const churnDiff = worstSource.churnRate > 0
+      ? Math.round(((worstSource.churnRate - bestSource.churnRate) / worstSource.churnRate) * 100)
+      : 0;
+
+    const insight = churnDiff > 0
+      ? `Clientes adquiridos por ${bestSource.sourceLabel} têm churn ${churnDiff}% menor que ${worstSource.sourceLabel}.`
+      : null;
+
+    res.json({ rows, bestSource, worstSource, insight });
+  } catch (err) {
+    console.error("Channel churn comparison error:", err);
+    res.status(500).json({ error: "Erro ao buscar comparação de canais" });
   }
 });
 

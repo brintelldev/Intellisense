@@ -538,6 +538,66 @@ export async function generateObtainAlerts(tenantId: string): Promise<{
   return { alertsGenerated };
 }
 
+export function generateRecommendedOffer(
+  tier: string,
+  companySize: string | null,
+  industry: string | null,
+): string {
+  const size = companySize ?? "medium";
+  if (tier === "hot") {
+    if (size === "enterprise") return "Plano Enterprise com onboarding dedicado e SLA premium";
+    if (size === "large") return "Plano Profissional+ com treinamento personalizado e suporte prioritário";
+    if (size === "medium") return "Plano Profissional com implementação guiada";
+    return "Plano Starter com período de trial estendido";
+  }
+  if (tier === "warm") {
+    if (size === "enterprise" || size === "large") return "Demo executiva personalizada + Proposta Enterprise";
+    return "Trial gratuito 14 dias + Webinar de onboarding";
+  }
+  return "Material educacional + Convite para webinar do setor";
+}
+
+export function generateSalesCadence(
+  tier: string,
+  companySize: string | null,
+  industry: string | null,
+  topFactorLabel: string | null,
+  source: string | null,
+): Array<{ day: number; type: "email" | "call" | "demo" | "proposal" | "meeting"; description: string }> {
+  const industryLabel = industry ?? "seu setor";
+  const topFactor = topFactorLabel ?? "fit de indústria";
+
+  if (tier === "hot") {
+    return [
+      { day: 1, type: "email", description: `Email personalizado — mencionar case relevante do setor ${industryLabel}` },
+      { day: 2, type: "call", description: "Ligação de qualificação — confirmar necessidades e budget" },
+      { day: 5, type: "demo", description: `Demo personalizada — focar em ${topFactor}` },
+      { day: 10, type: "proposal", description: "Enviar proposta comercial personalizada" },
+      { day: 14, type: "call", description: "Follow-up — tratar objeções e ajustar proposta" },
+      { day: 21, type: "meeting", description: "Reunião de fechamento com decisor" },
+    ];
+  }
+
+  if (tier === "warm") {
+    return [
+      { day: 1, type: "email", description: `Conteúdo educacional relevante para ${industryLabel}` },
+      { day: 7, type: "email", description: "Case study de cliente similar com resultado comprovado" },
+      { day: 14, type: "call", description: "Call de qualificação detalhada — entender momento de compra" },
+      { day: 21, type: "demo", description: "Demo em grupo ou webinar de produto" },
+      { day: 30, type: "proposal", description: "Proposta simplificada se lead qualificado" },
+      { day: 45, type: "call", description: "Follow-up final — definir próximos passos" },
+    ];
+  }
+
+  // cold / disqualified
+  return [
+    { day: 1, type: "email", description: `Newsletter do setor ${industryLabel} — educação de mercado` },
+    { day: 14, type: "email", description: "Estudo de caso de transformação digital" },
+    { day: 30, type: "email", description: "Convite para evento ou webinar gratuito" },
+    { day: 60, type: "call", description: "Call de requalificação — verificar mudança de momento" },
+  ];
+}
+
 // ─── Lead Narrative ──────────────────────────────────────────────────────────
 
 const SOURCE_LABELS: Record<string, string> = {

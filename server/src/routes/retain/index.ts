@@ -16,7 +16,9 @@ import {
   generateChurnCauses,
   generateAlerts,
   generateCustomerNarrative,
+  generateRetentionPlaybook,
 } from "../../engine/retain-scoring.js";
+import { formatTimeAgo } from "../../lib/time-utils.js";
 import { generateIcpClusters } from "../../engine/icp-clustering.js";
 import { suggestMapping } from "../../engine/column-mapper.js";
 import { readCsvFile, readCsvSample } from "../../lib/csv-reader.js";
@@ -93,11 +95,32 @@ retainRouter.get("/dashboard", async (req, res) => {
         ? `Churn probability em ${Math.round((c.churnProbability ?? 0) * 100)}%`
         : `Health score baixo (${c.healthScore})`,
       severity: c.riskLevel === "critical" ? "critical" : "high",
-      timeAgo: "recente",
+      timeAgo: formatTimeAgo(c.createdAt),
     }));
 
     const riskDistribution: Record<string, number> = { low: 0, medium: 0, high: 0, critical: 0 };
     riskRows.forEach(r => { if (r.riskLevel) riskDistribution[r.riskLevel] = r.count; });
+
+    const mrr = latest?.mrr ?? 0;
+    const churnRateDecimal = (latest?.churnRate ?? 0) / 100;
+    // 3 monthly projection scenarios
+    const months = [1, 2, 3];
+    const revenueProjection = {
+      current: mrr,
+      months: months.map(m => ({
+        month: m * 30,
+        pessimistic: Math.round(mrr * Math.pow(1 - churnRateDecimal, m)),
+        withRetention: Math.round(mrr * Math.pow(1 - churnRateDecimal * 0.4, m)),
+        optimistic: 0, // will compute below
+      })),
+    };
+    // Optimistic: with-retention + expansion potential
+    // Use revenueAtRisk * 0.05 as monthly expansion proxy
+    const expansionMonthly = (latest?.revenueAtRisk ?? 0) * 0.05;
+    revenueProjection.months = revenueProjection.months.map(p => ({
+      ...p,
+      optimistic: Math.round(p.withRetention + expansionMonthly * p.month / 30),
+    }));
 
     const calcChange = (curr: number | null, prev: number | null) => {
       if (!curr || !prev || prev === 0) return 0;
@@ -110,7 +133,7 @@ retainRouter.get("/dashboard", async (req, res) => {
         totalCustomersChange: calcChange(latest?.totalCustomers ?? null, previous?.totalCustomers ?? null),
         churnRate: latest?.churnRate ?? 0,
         churnRateChange: calcChange(latest?.churnRate ?? null, previous?.churnRate ?? null),
-        mrr: latest?.mrr ?? 0,
+        mrr,
         mrrChange: calcChange(latest?.mrr ?? null, previous?.mrr ?? null),
         revenueAtRisk: latest?.revenueAtRisk ?? 0,
         revenueAtRiskChange: calcChange(latest?.revenueAtRisk ?? null, previous?.revenueAtRisk ?? null),
@@ -118,6 +141,7 @@ retainRouter.get("/dashboard", async (req, res) => {
         riskDistribution,
       },
       alerts,
+      revenueProjection,
     });
   } catch (err) {
     console.error("Retain dashboard error:", err);
@@ -367,6 +391,15 @@ retainRouter.get("/predictions/:customerId", async (req, res) => {
       scoreTrend,
     );
 
+    const shapValuesForPlaybook = (row.prediction.shapValues as any[]) ?? [];
+    const topNegativeFactor = shapValuesForPlaybook.find((s: any) => s.direction === "negative");
+    const retentionPlaybook = generateRetentionPlaybook(
+      row.prediction.riskLevel ?? "medium",
+      topNegativeFactor?.feature ?? null,
+      row.customer.dimContractRemainingDays,
+      row.customer.dimRevenue,
+    );
+
     res.json({
       ...mapCustomerToDto(row.customer),
       churnProbability: row.prediction.churnProbability,
@@ -379,6 +412,7 @@ retainRouter.get("/predictions/:customerId", async (req, res) => {
       segmentBenchmark,
       scoreTrend,
       peerRiskCount,
+      retentionPlaybook,
     });
   } catch (err) {
     console.error("Retain prediction detail error:", err);
@@ -444,7 +478,33 @@ retainRouter.get("/churn-causes", async (req, res) => {
     const rows = await db.select().from(retainChurnCauses)
       .where(eq(retainChurnCauses.tenantId, req.tenantId!))
       .orderBy(desc(retainChurnCauses.impactPct));
-    res.json(rows);
+
+    const [atRiskRow] = await db.select({ count: sql<number>`count(*)::int` })
+      .from(customers)
+      .where(and(
+        eq(customers.tenantId, req.tenantId!),
+        sql`${customers.riskLevel} IN ('high', 'critical')`,
+      ));
+
+    const analyticsSnaps = await db.select({ revenueAtRisk: retainAnalytics.revenueAtRisk })
+      .from(retainAnalytics)
+      .where(eq(retainAnalytics.tenantId, req.tenantId!))
+      .orderBy(desc(retainAnalytics.snapshotDate))
+      .limit(2);
+
+    const latestRisk = analyticsSnaps[0]?.revenueAtRisk ?? 0;
+    const prevRisk = analyticsSnaps[1]?.revenueAtRisk ?? 0;
+    const revenueAtRiskChange = prevRisk > 0
+      ? Math.round(((latestRisk - prevRisk) / prevRisk) * 1000) / 10
+      : 0;
+
+    res.json({
+      causes: rows,
+      summary: {
+        totalAtRisk: atRiskRow?.count ?? 0,
+        revenueAtRiskChange,
+      },
+    });
   } catch (err) {
     console.error("Retain churn causes error:", err);
     res.status(500).json({ error: "Erro ao buscar causas de churn" });

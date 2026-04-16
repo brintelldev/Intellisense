@@ -170,3 +170,21 @@ export function useSuggestObtainMapping() {
       api.post<any[]>("/obtain/upload/suggest-mapping", data),
   });
 }
+
+// ─── Win Patterns ────────────────────────────────────────────────────────────
+export function useObtainWinPatterns() {
+  return useQuery({
+    queryKey: ["obtain", "win-patterns"],
+    queryFn: () => api.get<any>("/obtain/win-patterns"),
+    staleTime: 120_000,
+  });
+}
+
+// ─── Channel Churn Comparison ────────────────────────────────────────────────
+export function useChannelChurnComparison() {
+  return useQuery({
+    queryKey: ["obtain", "channel-churn-comparison"],
+    queryFn: () => api.get<any>("/obtain/channel-churn-comparison"),
+    staleTime: 120_000,
+  });
+}

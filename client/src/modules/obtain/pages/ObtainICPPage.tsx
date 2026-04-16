@@ -31,6 +31,20 @@ export default function ObtainICPPage() {
     );
   }
 
+  const antiIcp = icpClusters.find(c => c.type === "anti");
+  const idealIcp = icpClusters.find(c => c.type === "ideal");
+
+  // LTV multiple: ideal vs anti
+  const ltvMultiple = antiIcp && idealIcp && antiIcp.avgLtv > 0
+    ? Math.round((idealIcp.avgLtv / antiIcp.avgLtv) * 10) / 10
+    : null;
+
+  // Revenue share of anti-ICP (using leads in funnel as proxy)
+  const totalLeads = icpClusters.reduce((sum, c) => sum + (c.leadsInFunnel ?? 0), 0);
+  const antiIcpLeadShare = antiIcp && totalLeads > 0
+    ? Math.round((antiIcp.leadsInFunnel / totalLeads) * 100)
+    : null;
+
   return (
     <div className="space-y-6 w-full">
       <div className="flex items-center gap-2">
@@ -59,7 +73,7 @@ export default function ObtainICPPage() {
                 </div>
                 <div className="bg-white rounded-lg p-2.5 border border-slate-100">
                   <p className="text-xs text-slate-400">CAC</p>
-                  <p className="text-sm font-bold text-slate-800">{fmtBRL(cluster.avgCac)}</p>
+                  <p className="text-sm font-bold text-slate-800">{cluster.avgCac ? fmtBRL(cluster.avgCac) : "—"}</p>
                 </div>
                 <div className="bg-white rounded-lg p-2.5 border border-slate-100">
                   <p className="text-xs text-slate-400">Conversão</p>
@@ -96,7 +110,13 @@ export default function ObtainICPPage() {
               {cluster.type === "anti" && (
                 <div className="mt-3 flex items-start gap-2 p-2.5 bg-red-50 border border-red-200 rounded-lg">
                   <svg className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
-                  <p className="text-xs text-red-700">Consome <strong>23% do budget</strong> mas gera apenas <strong>8% da receita retida</strong>. Evitar prospecção ativa — ROI negativo histórico.</p>
+                  <p className="text-xs text-red-700">
+                    {antiIcpLeadShare != null ? (
+                      <>Consome <strong>{antiIcpLeadShare}% do funil</strong> mas tem churn <strong>{(cluster.churnRate * 100).toFixed(0)}% </strong> — ROI negativo histórico. Evitar prospecção ativa.</>
+                    ) : (
+                      <>Perfil com alto índice de churn ({(cluster.churnRate * 100).toFixed(0)}%). Evitar prospecção ativa — ROI negativo.</>
+                    )}
+                  </p>
                 </div>
               )}
 
@@ -124,11 +144,19 @@ export default function ObtainICPPage() {
           <h4 className="font-semibold text-slate-800">Recomendação de Alocação de Budget</h4>
           <span className="ml-auto text-xs bg-[#293b83] text-white px-2 py-0.5 rounded-full">Dados do Retain Sense</span>
         </div>
-        <p className="text-sm text-slate-600">
-          O ICP Ideal (Mineradoras Mid-Market) tem <strong>3.2× mais LTV</strong> que o Anti-ICP (R$ 1,08M vs R$ 85K).
-          Leads deste cluster adquiridos via <strong>LinkedIn Ads</strong> têm churn <strong>62% menor</strong> que a média.
-          Realocar 30% do budget de Google Ads para LinkedIn pode aumentar o ROI em <strong>+45%</strong>.
-        </p>
+        {idealIcp && antiIcp ? (
+          <p className="text-sm text-slate-600">
+            {ltvMultiple && ltvMultiple > 1 && (
+              <>O ICP Ideal <strong>({idealIcp.name})</strong> tem <strong>{ltvMultiple}× mais LTV</strong> que o Anti-ICP ({fmtBRL(idealIcp.avgLtv)} vs {fmtBRL(antiIcp.avgLtv)}). </>
+            )}
+            Leads do cluster ideal têm churn de apenas <strong>{(idealIcp.churnRate * 100).toFixed(0)}%</strong> vs <strong>{(antiIcp.churnRate * 100).toFixed(0)}%</strong> do Anti-ICP.
+            {' '}Priorize a prospecção no perfil <strong>{idealIcp.name}</strong> para maximizar retorno.
+          </p>
+        ) : (
+          <p className="text-sm text-slate-600">
+            Faça upload de dados de clientes e leads para ver análise comparativa de ICP vs Anti-ICP.
+          </p>
+        )}
       </div>
     </div>
   );

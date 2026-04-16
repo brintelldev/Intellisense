@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useLocation } from "wouter";
 import { fmtBRL } from "../../../shared/lib/format";
 
@@ -12,7 +13,7 @@ interface Priority {
   contractRemainingDays: number | null;
   topFactor: { label: string; impact: number } | null;
   recommendedAction: string;
-  scoreTrend: { direction: "declining" | "stable" | "improving"; delta: number };
+  scoreTrend: { direction: "declining" | "stable" | "improving"; delta: number; weeksAnalyzed?: number };
 }
 
 interface ActionPrioritiesData {
@@ -36,23 +37,64 @@ const RISK_COLORS: Record<string, string> = {
 };
 
 const RISK_LABELS: Record<string, string> = {
-  critical: "Crítico",
-  high: "Alto",
-  medium: "Médio",
-  low: "Baixo",
+  critical: "Crítico", high: "Alto", medium: "Médio", low: "Baixo",
 };
 
-const TREND_ICON = (direction: "declining" | "stable" | "improving", delta: number) => {
-  if (direction === "declining") return <span className="text-red-500 text-xs font-medium">↓ {Math.abs(delta)} pts</span>;
-  if (direction === "improving") return <span className="text-green-500 text-xs font-medium">↑ {Math.abs(delta)} pts</span>;
+function TrendIcon({ direction, delta }: { direction: "declining" | "stable" | "improving"; delta: number }) {
+  if (direction === "declining") return <span className="text-red-500 text-xs font-medium">↓{Math.abs(delta)}pts</span>;
+  if (direction === "improving") return <span className="text-green-500 text-xs font-medium">↑{Math.abs(delta)}pts</span>;
   return <span className="text-slate-400 text-xs">→ estável</span>;
-};
+}
+
+function CountdownBadge({ p }: { p: Priority }) {
+  // Countdown from score trend
+  if (p.scoreTrend.direction === "declining" && Math.abs(p.scoreTrend.delta) > 5 && p.healthScore > 0) {
+    const weeksAnalyzed = p.scoreTrend.weeksAnalyzed ?? 4;
+    const deltaPerWeek = Math.abs(p.scoreTrend.delta) / Math.max(weeksAnalyzed, 1);
+    const daysUntilChurn = deltaPerWeek > 0
+      ? Math.round(p.healthScore / (deltaPerWeek / 7))
+      : null;
+    if (daysUntilChurn && daysUntilChurn > 0 && daysUntilChurn < 90) {
+      const colorClass = daysUntilChurn < 15 ? "bg-red-100 text-red-700" : daysUntilChurn < 30 ? "bg-orange-100 text-orange-700" : "bg-amber-100 text-amber-700";
+      return (
+        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${colorClass}`}>
+          ⏱ ~{daysUntilChurn}d
+        </span>
+      );
+    }
+  }
+  // Contract countdown
+  if (p.contractRemainingDays != null && p.contractRemainingDays > 0 && p.contractRemainingDays < 60) {
+    const colorClass = p.contractRemainingDays < 15 ? "bg-red-100 text-red-700" : p.contractRemainingDays < 30 ? "bg-orange-100 text-orange-700" : "bg-amber-100 text-amber-700";
+    return (
+      <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${colorClass}`}>
+        📋 {p.contractRemainingDays}d
+      </span>
+    );
+  }
+  return null;
+}
 
 export function ActionPrioritiesCard({ data, onSelectCustomer }: Props) {
   const [, navigate] = useLocation();
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const { priorities, totalRevenueAtStake, contractsExpiring30d, criticalCount, highCount } = data;
 
   if (priorities.length === 0) return null;
+
+  const toggleSelect = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectedPriorities = priorities.filter(p => selected.has(p.customerId));
+  const protectedRevenue = selectedPriorities.reduce((sum, p) => sum + p.revenue, 0);
+  const hasSelection = selected.size > 0;
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
@@ -67,40 +109,52 @@ export function ActionPrioritiesCard({ data, onSelectCustomer }: Props) {
             </div>
             <div>
               <h2 className="font-bold text-slate-900 text-sm">Suas Prioridades Esta Semana</h2>
-              <p className="text-xs text-slate-500">Clientes que requerem ação imediata</p>
+              <p className="text-xs text-slate-500">Selecione clientes para ver impacto da ação</p>
             </div>
           </div>
-          <button
-            onClick={() => navigate("/retain/predictions")}
-            className="text-xs font-medium text-[#293b83] hover:underline"
-          >
+          <button onClick={() => navigate("/retain/predictions")} className="text-xs font-medium text-[#293b83] hover:underline">
             Ver todos →
           </button>
         </div>
 
-        {/* Banner stats */}
-        <div className="flex gap-4 mt-3">
-          {totalRevenueAtStake > 0 && (
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-amber-500" />
-              <span className="text-xs text-slate-600 font-medium">
-                {fmtBRL(totalRevenueAtStake)} em receita protegível
-              </span>
+        {/* Impact simulator banner */}
+        {hasSelection ? (
+          <div className="mt-3 bg-[#293b83] text-white rounded-lg px-4 py-2.5 flex items-center justify-between">
+            <div>
+              <span className="text-xs text-white/80">Se atuar nos {selected.size} selecionados →</span>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="text-base">🛡️</span>
+                <span className="font-bold text-sm">{fmtBRL(protectedRevenue)}/mês protegidos</span>
+                <span className="text-xs text-white/70">({fmtBRL(protectedRevenue * 12)}/ano)</span>
+              </div>
             </div>
-          )}
-          {contractsExpiring30d > 0 && (
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-red-500" />
-              <span className="text-xs text-slate-600 font-medium">
-                {contractsExpiring30d} contrato{contractsExpiring30d > 1 ? "s" : ""} vencem em 30d
-              </span>
-            </div>
-          )}
-          <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-red-600 animate-pulse" />
-            <span className="text-xs text-slate-600 font-medium">{criticalCount} crítico{criticalCount !== 1 ? "s" : ""} · {highCount} alto risco</span>
+            <button
+              onClick={() => setSelected(new Set())}
+              className="text-xs text-white/70 hover:text-white underline ml-3 flex-shrink-0"
+            >
+              Limpar
+            </button>
           </div>
-        </div>
+        ) : (
+          <div className="flex gap-4 mt-3">
+            {totalRevenueAtStake > 0 && (
+              <div className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-amber-500" />
+                <span className="text-xs text-slate-600 font-medium">{fmtBRL(totalRevenueAtStake)} em receita protegível</span>
+              </div>
+            )}
+            {contractsExpiring30d > 0 && (
+              <div className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-red-500" />
+                <span className="text-xs text-slate-600 font-medium">{contractsExpiring30d} contrato{contractsExpiring30d > 1 ? "s" : ""} vencem em 30d</span>
+              </div>
+            )}
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-red-600 animate-pulse" />
+              <span className="text-xs text-slate-600 font-medium">{criticalCount} crítico{criticalCount !== 1 ? "s" : ""} · {highCount} alto risco</span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Priority cards */}
@@ -108,10 +162,24 @@ export function ActionPrioritiesCard({ data, onSelectCustomer }: Props) {
         {priorities.map((p) => (
           <div
             key={p.customerId}
-            className="px-5 py-4 hover:bg-slate-50/50 transition-colors cursor-pointer"
+            className={`px-5 py-4 hover:bg-slate-50/50 transition-colors cursor-pointer ${selected.has(p.customerId) ? "bg-[#293b83]/[0.03]" : ""}`}
             onClick={() => onSelectCustomer?.(p.customerId)}
           >
-            <div className="flex items-start gap-4">
+            <div className="flex items-start gap-3">
+              {/* Checkbox */}
+              <div
+                className="flex-shrink-0 mt-0.5"
+                onClick={(e) => toggleSelect(p.customerId, e)}
+              >
+                <div className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-colors ${selected.has(p.customerId) ? "bg-[#293b83] border-[#293b83]" : "border-slate-300 hover:border-[#293b83]"}`}>
+                  {selected.has(p.customerId) && (
+                    <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                </div>
+              </div>
+
               {/* Left: name + badges */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
@@ -119,14 +187,12 @@ export function ActionPrioritiesCard({ data, onSelectCustomer }: Props) {
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${RISK_COLORS[p.riskLevel] ?? "bg-slate-100 text-slate-500"}`}>
                     {RISK_LABELS[p.riskLevel] ?? p.riskLevel}
                   </span>
-                  {TREND_ICON(p.scoreTrend.direction, p.scoreTrend.delta)}
+                  <TrendIcon direction={p.scoreTrend.direction} delta={p.scoreTrend.delta} />
+                  <CountdownBadge p={p} />
                 </div>
                 <p className="text-xs text-slate-500 mt-0.5">
                   {p.segment && `${p.segment} · `}
                   {fmtBRL(p.revenue)}/mês · Score {p.healthScore} · Churn {Math.round(p.churnProbability * 100)}%
-                  {p.contractRemainingDays != null && p.contractRemainingDays > 0 && p.contractRemainingDays < 60 && (
-                    <span className="text-red-600 font-medium"> · Contrato vence em {p.contractRemainingDays}d</span>
-                  )}
                 </p>
                 {p.topFactor && (
                   <p className="text-xs text-slate-500 mt-1">
@@ -145,6 +211,21 @@ export function ActionPrioritiesCard({ data, onSelectCustomer }: Props) {
           </div>
         ))}
       </div>
+
+      {/* Footer action */}
+      {hasSelection && (
+        <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex justify-end">
+          <button
+            onClick={() => {
+              alert(`Plano de ação criado para ${selected.size} cliente${selected.size > 1 ? "s" : ""}!`);
+              setSelected(new Set());
+            }}
+            className="text-sm font-medium bg-[#293b83] text-white px-4 py-2 rounded-lg hover:bg-[#1e2d6b] transition-colors"
+          >
+            Criar Plano de Ação para {selected.size} →
+          </button>
+        </div>
+      )}
     </div>
   );
 }

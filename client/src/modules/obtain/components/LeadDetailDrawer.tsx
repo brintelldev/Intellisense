@@ -19,6 +19,55 @@ const SOURCE_LABELS: Record<string, string> = {
   paid_search: "Google Ads", outbound: "Outbound", email: "E-mail",
 };
 
+const TYPE_ICONS: Record<string, string> = {
+  email: "📧", call: "📞", demo: "🖥️", proposal: "📄", meeting: "🤝",
+};
+
+function SalesCadenceSection({ cadence, tier }: { cadence: any[]; tier: string }) {
+  const [open, setOpen] = useState(false);
+  const tierColor = tier === "hot" ? "text-[#10B981]" : tier === "warm" ? "text-amber-600" : "text-slate-500";
+  const tierLabel = tier === "hot" ? "Lead Hot" : tier === "warm" ? "Lead Warm" : "Lead Cold";
+
+  return (
+    <div className="bg-slate-50 rounded-xl overflow-hidden border border-slate-100">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <span>📅</span>
+          <span>Cadência de Abordagem</span>
+          <span className={`text-xs font-medium px-1.5 py-0.5 rounded-full bg-white border ${tierColor}`}>{tierLabel}</span>
+        </div>
+        <svg className={`w-4 h-4 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {open && (
+        <div className="px-4 pb-4">
+          <div className="relative">
+            <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-slate-200" />
+            {cadence.map((step: any, i: number) => (
+              <div key={i} className="relative flex items-start gap-3 mb-3 last:mb-0">
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-white border-2 border-slate-200 flex items-center justify-center text-xs font-bold text-slate-500 z-10">
+                  {step.day}
+                </div>
+                <div className="flex-1 bg-white rounded-lg border border-slate-100 px-3 py-2 mt-0.5">
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <span className="text-sm">{TYPE_ICONS[step.type] ?? "•"}</span>
+                    <span className="text-[10px] font-bold text-slate-500 uppercase">{step.type}</span>
+                  </div>
+                  <p className="text-xs text-slate-700">{step.description}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function LeadDetailDrawer({ lead, onClose }: Props) {
   const [actionOpen, setActionOpen] = useState(false);
   const [actionNote, setActionNote] = useState("");
@@ -107,9 +156,17 @@ export function LeadDetailDrawer({ lead, onClose }: Props) {
           <div className="border-l-4 border-[#10B981] bg-[#10B981]/5 rounded-r-xl p-4">
             <div className="flex items-center gap-2 mb-2">
               <h4 className="font-semibold text-[#10B981] text-sm">Oferta Recomendada</h4>
-              <span className="text-xs bg-[#10B981] text-white px-2 py-0.5 rounded-full">72% de conversão neste perfil</span>
+              {(score.channelPerformance?.conversionRate != null || lead.conversionProbability != null) && (
+                <span className="text-xs bg-[#10B981] text-white px-2 py-0.5 rounded-full">
+                  {score.channelPerformance?.conversionRate != null
+                    ? `${score.channelPerformance.conversionRate}% neste canal`
+                    : `${Math.round((lead.conversionProbability ?? 0) * 100)}% prob. conversão`}
+                </span>
+              )}
             </div>
-            <p className="text-sm font-semibold text-slate-800">{score.recommendedOffer}</p>
+            <p className="text-sm font-semibold text-slate-800">
+              {score.recommendedOffer && score.recommendedOffer.trim() !== "" ? score.recommendedOffer : score.recommendedAction}
+            </p>
             <p className="text-xs text-slate-600 mt-1">{score.recommendedAction}</p>
             {!actionDone && !actionOpen && (
               <button
@@ -221,6 +278,11 @@ export function LeadDetailDrawer({ lead, onClose }: Props) {
               </div>
             )}
           </div>
+        )}
+
+        {/* Sales Cadence */}
+        {score?.salesCadence && score.salesCadence.length > 0 && (
+          <SalesCadenceSection cadence={score.salesCadence} tier={lead.scoreTier} />
         )}
 
         {/* Lead info */}

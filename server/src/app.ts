@@ -10,6 +10,7 @@ import { obtainRouter } from "./routes/obtain/index";
 import { tenantsRouter } from "./routes/tenants";
 import { seedRouter } from "./routes/seed";
 import { scoringRouter } from "./routes/scoring";
+import { lifecycleRouter } from "./routes/lifecycle";
 import { authMiddleware } from "./middleware/auth";
 import { tenantMiddleware } from "./middleware/tenant";
 
@@ -69,6 +70,7 @@ export function createApp(sessionStore?: session.Store) {
   app.use("/api", authMiddleware, tenantMiddleware, scoringRouter);
   app.use("/api/retain", authMiddleware, tenantMiddleware, retainRouter);
   app.use("/api/obtain", authMiddleware, tenantMiddleware, obtainRouter);
+  app.use("/api/lifecycle", authMiddleware, tenantMiddleware, lifecycleRouter);
 
   // Error handler
   app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

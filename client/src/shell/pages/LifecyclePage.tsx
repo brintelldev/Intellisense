@@ -1,12 +1,14 @@
 import { useLocation } from "wouter";
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, ResponsiveContainer } from "recharts";
-import { useRetainDashboard } from "../../shared/hooks/useRetain";
-import { useObtainDashboard, useLeadQualityTrend } from "../../shared/hooks/useObtain";
+import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
+  BarChart, Bar, ResponsiveContainer,
+} from "recharts";
+import { useRetainDashboard, useRetainExpansionOpportunities, useRetainAnalyticsHistory } from "../../shared/hooks/useRetain";
+import { useObtainDashboard, useLeadQualityTrend, useLifecycleSourceLtv, useChannelChurnComparison } from "../../shared/hooks/useObtain";
+import { ExecutiveSummary } from "../components/ExecutiveSummary";
 import { LoadingState } from "../../shared/components/LoadingState";
 import { EmptyState } from "../../shared/components/EmptyState";
 import { fmtBRLShort as fmtBRL } from "../../shared/lib/format";
-
-const EMPTY_SOURCE_PERF: { source: string; ltv: number }[] = [];
 
 export default function LifecyclePage() {
   const [, navigate] = useLocation();
@@ -14,6 +16,10 @@ export default function LifecyclePage() {
   const { data: retainDashData, isLoading: loadingRetain } = useRetainDashboard();
   const { data: obtainDashData, isLoading: loadingObtain } = useObtainDashboard();
   const { data: qualityTrend } = useLeadQualityTrend();
+  const { data: sourceLtv } = useLifecycleSourceLtv();
+  const { data: expansionData } = useRetainExpansionOpportunities();
+  const { data: analyticsHistory } = useRetainAnalyticsHistory();
+  const { data: channelChurn } = useChannelChurnComparison();
 
   const dashboardKPIs = retainDashData?.kpis;
   const obtainDashboardKPIs = obtainDashData?.kpis;
@@ -35,15 +41,32 @@ export default function LifecyclePage() {
     );
   }
 
+  // ── NRR trend computation from analytics history ──────────────────────────
+  const nrrPoints = (analyticsHistory ?? []).filter(p => p.nrr !== null);
+  const latestNrr = nrrPoints[nrrPoints.length - 1]?.nrr ?? null;
+  // Compare against the minimum NRR (the "trough") to show recovery story
+  const minNrr = nrrPoints.length > 0 ? Math.min(...nrrPoints.map(p => p.nrr!)) : null;
+  const troughPoint = nrrPoints.find(p => p.nrr === minNrr);
+  const nrrImproved = latestNrr !== null && minNrr !== null && latestNrr > minNrr;
+  const nrrDelta = latestNrr !== null && minNrr !== null
+    ? Math.round((latestNrr - minNrr) * 10) / 10
+    : null;
+
+  // ── Expansion summary ─────────────────────────────────────────────────────
+  const totalPotential = expansionData?.totalAnnualPotential ?? 0;
+  const topOpps = expansionData?.opportunities?.slice(0, 3) ?? [];
+
   return (
     <div className="space-y-6 w-full">
+      <ExecutiveSummary />
+
       {/* Page header */}
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Ciclo de Vida do Cliente</h1>
         <p className="text-sm text-slate-500 mt-1">Visão integrada de aquisição e retenção</p>
       </div>
 
-      {/* 3 blocks */}
+      {/* 3 KPI blocks */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Obtain block */}
         <div className="bg-white rounded-xl p-5 shadow-sm border-t-4 border-[#10B981]">
@@ -126,62 +149,173 @@ export default function LifecyclePage() {
         </div>
       </div>
 
-      {/* Ecosystem insight */}
-      <div className="bg-[#f0fdf4] rounded-xl p-5 shadow-sm border-l-4 border-[#10B981]">
-        <div className="flex items-start gap-3">
-          <div className="w-8 h-8 bg-[#293b83]/10 rounded-lg flex items-center justify-center flex-shrink-0">
-            <svg className="w-4 h-4 text-[#293b83]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-            </svg>
-          </div>
-          <div>
-            <div className="flex flex-wrap items-center gap-2 mb-1">
-              <h3 className="font-semibold text-slate-800">Insight do Ecossistema</h3>
-              <span className="text-xs bg-gradient-to-r from-[#293b83] to-[#10B981] text-white px-2 py-0.5 rounded-full">Retroalimentação Retain → Obtain</span>
+      {/* 3-card insight stack */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+        {/* Card 1: Feedback Loop (green) */}
+        <div className="bg-[#f0fdf4] rounded-xl p-5 border-l-4 border-[#10B981]">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-7 h-7 bg-[#10B981]/15 rounded-lg flex items-center justify-center flex-shrink-0">
+              <svg className="w-3.5 h-3.5 text-[#10B981]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
             </div>
-            <p className="text-sm text-slate-600">
-              Clientes adquiridos por <strong>Indicação</strong> (Obtain) têm churn <strong>62% menor</strong> que a média (Retain).
-              Recomendação: aumentar investimento neste canal em 30%.
-            </p>
+            <span className="text-xs font-semibold text-[#10B981]">Retroalimentação Retain → Obtain</span>
           </div>
+          {channelChurn?.insight ? (
+            <p className="text-sm text-slate-700">{channelChurn.insight}</p>
+          ) : (
+            <p className="text-sm text-slate-700">
+              Adquira dados de leads e clientes para ver a comparação de churn por canal.
+            </p>
+          )}
+          {channelChurn?.bestSource && (
+            <p className="text-xs text-slate-500 mt-2">
+              Recomendação: priorize o canal <strong>{channelChurn.bestSource.sourceLabel}</strong> para menor churn.
+            </p>
+          )}
         </div>
+
+        {/* Card 2: Expansion Opportunities (blue) */}
+        <div className="bg-blue-50 rounded-xl p-5 border-l-4 border-[#293b83]">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-7 h-7 bg-[#293b83]/10 rounded-lg flex items-center justify-center flex-shrink-0">
+              <svg className="w-3.5 h-3.5 text-[#293b83]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+              </svg>
+            </div>
+            <span className="text-xs font-semibold text-[#293b83]">Oportunidades de Expansão</span>
+          </div>
+          {totalPotential > 0 ? (
+            <>
+              <p className="text-sm text-slate-700">
+                <strong className="text-[#293b83]">{expansionData?.totalCount ?? 0} clientes saudáveis</strong> abaixo da mediana do segmento.
+              </p>
+              <p className="text-lg font-bold text-[#293b83] mt-1">{fmtBRL(totalPotential)}<span className="text-xs font-normal text-slate-500">/ano potencial</span></p>
+              <div className="mt-2 space-y-1">
+                {topOpps.map(o => (
+                  <div key={o.id} className="flex justify-between text-xs text-slate-600">
+                    <span className="truncate max-w-[140px]">{o.name}</span>
+                    <span className="text-[#293b83] font-medium">+{fmtBRL(o.gap)}/mês</span>
+                  </div>
+                ))}
+              </div>
+              <button
+                onClick={() => navigate("/retain/customers")}
+                className="mt-3 text-xs text-[#293b83] font-medium hover:underline"
+              >
+                Ver todos →
+              </button>
+            </>
+          ) : (
+            <p className="text-sm text-slate-500">Nenhuma oportunidade identificada. Faça upload de clientes primeiro.</p>
+          )}
+        </div>
+
+        {/* Card 3: NRR Trend (purple) */}
+        <div className="bg-purple-50 rounded-xl p-5 border-l-4 border-purple-500">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-7 h-7 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
+              <svg className="w-3.5 h-3.5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+            </div>
+            <span className="text-xs font-semibold text-purple-700">Tendência de NRR</span>
+          </div>
+          {latestNrr !== null ? (
+            <>
+              <div className="flex items-baseline gap-2 mt-1">
+                <span className={`text-2xl font-bold ${latestNrr >= 100 ? "text-purple-700" : "text-slate-700"}`}>{latestNrr}%</span>
+                {nrrDelta !== null && nrrImproved && (
+                  <span className="text-xs font-medium text-green-600">
+                    +{nrrDelta}pp vs. mínimo ({minNrr}% em {troughPoint?.month})
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 mt-1">
+                {latestNrr !== null && latestNrr >= 100
+                  ? "Expansão líquida: cada real investido em CS rende mais do que entra."
+                  : "Oportunidade: foco em expansão e redução de churn."}
+              </p>
+              {/* Mini sparkline of NRR points */}
+              {nrrPoints.length >= 3 && (
+                <div className="mt-2 h-10">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={nrrPoints} margin={{ top: 2, right: 0, bottom: 0, left: 0 }}>
+                      <defs>
+                        <linearGradient id="nrrGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#7c3aed" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#7c3aed" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <Area type="monotone" dataKey="nrr" stroke="#7c3aed" fill="url(#nrrGrad)" strokeWidth={1.5} dot={false} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+              <button
+                onClick={() => navigate("/retain/revenue")}
+                className="mt-2 text-xs text-purple-700 font-medium hover:underline"
+              >
+                Ver Revenue Analytics →
+              </button>
+            </>
+          ) : (
+            <p className="text-sm text-slate-500">Aguardando dados históricos para calcular NRR.</p>
+          )}
+        </div>
+
       </div>
 
       {/* Charts */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Line chart */}
+        {/* Quality trend chart */}
         <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-100">
-          <h3 className="font-semibold text-slate-800 mb-4">Qualidade da Aquisição ao Longo do Tempo</h3>
-          <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={qualityTrend ?? []}>
-              <defs>
-                <linearGradient id="hotGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#10B981" stopOpacity={0.3}/>
-                  <stop offset="95%" stopColor="#10B981" stopOpacity={0}/>
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-              <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} />
-              <Tooltip />
-              <Area type="monotone" dataKey="hot" name="Hot" stroke="#10B981" fill="url(#hotGrad)" strokeWidth={2} />
-              <Area type="monotone" dataKey="warm" name="Warm" stroke="#f59e0b" fill="none" strokeWidth={2} strokeDasharray="4 4" />
-            </AreaChart>
-          </ResponsiveContainer>
+          <h3 className="font-semibold text-slate-800 mb-1">Qualidade da Aquisição ao Longo do Tempo</h3>
+          <p className="text-xs text-slate-400 mb-4">Distribuição de leads por tier de score (mensal)</p>
+          {qualityTrend && qualityTrend.length > 0 ? (
+            <ResponsiveContainer width="100%" height={200}>
+              <AreaChart data={qualityTrend}>
+                <defs>
+                  <linearGradient id="hotGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10B981" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="#10B981" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 10 }} />
+                <Tooltip />
+                <Area type="monotone" dataKey="hot" name="Hot" stroke="#10B981" fill="url(#hotGrad)" strokeWidth={2} />
+                <Area type="monotone" dataKey="warm" name="Warm" stroke="#f59e0b" fill="none" strokeWidth={2} strokeDasharray="4 4" />
+              </AreaChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-[200px] flex items-center justify-center">
+              <p className="text-sm text-slate-400">Faça upload de leads (Obtain Sense) para ver o histórico de qualidade.</p>
+            </div>
+          )}
         </div>
 
-        {/* Bar chart */}
+        {/* Source LTV chart */}
         <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-100">
-          <h3 className="font-semibold text-slate-800 mb-4">Origem dos Melhores Clientes (LTV Médio)</h3>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={EMPTY_SOURCE_PERF} layout="vertical">
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
-              <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v) => `R$${v}K`} />
-              <YAxis dataKey="source" type="category" tick={{ fontSize: 10 }} width={72} />
-              <Tooltip formatter={(v: number) => [`R$ ${v}K`, "LTV Médio"]} />
-              <Bar dataKey="ltv" fill="#293b83" radius={[0, 4, 4, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          <h3 className="font-semibold text-slate-800 mb-1">Origem dos Melhores Clientes (LTV Médio)</h3>
+          <p className="text-xs text-slate-400 mb-4">Canais de aquisição ordenados por LTV médio previsto</p>
+          {sourceLtv && sourceLtv.length > 0 ? (
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={sourceLtv} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v: number) => v >= 1_000_000 ? `R$${(v/1_000_000).toFixed(1)}M` : `R$${Math.round(v/1000)}K`} />
+                <YAxis dataKey="source" type="category" tick={{ fontSize: 10 }} width={80} />
+                <Tooltip formatter={(v: number) => [v >= 1_000_000 ? `R$ ${(v/1_000_000).toFixed(2)}M` : `R$ ${Math.round(v/1000)}K`, "LTV Médio"]} />
+                <Bar dataKey="ltv" fill="#293b83" radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-[200px] flex items-center justify-center">
+              <p className="text-sm text-slate-400">Faça upload de leads (Obtain Sense) para ver o LTV por canal.</p>
+            </div>
+          )}
         </div>
       </div>
     </div>

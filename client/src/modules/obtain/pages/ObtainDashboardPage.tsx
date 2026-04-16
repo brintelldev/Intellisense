@@ -7,6 +7,9 @@ import { LeadQualityAreaChart } from "../components/LeadQualityAreaChart";
 import { ICPDistributionDonut } from "../components/ICPDistributionDonut";
 import { LeadPrioritiesCard } from "../components/LeadPrioritiesCard";
 import { LeadDetailDrawer } from "../components/LeadDetailDrawer";
+import { PipelineHealthCard } from "../components/PipelineHealthCard";
+import { PipelineProjectionCard } from "../components/PipelineProjectionCard";
+import { WinPatternsCard } from "../components/WinPatternsCard";
 import { EmptyState } from "../../../shared/components/EmptyState";
 import { DataFreshnessIndicator } from "../../../shared/components/DataFreshnessIndicator";
 import { LoadingState } from "../../../shared/components/LoadingState";
@@ -64,6 +67,16 @@ export default function ObtainDashboardPage() {
           data={leadPriorities}
           onSelectLead={(id) => setSelectedLeadId(id)}
         />
+      )}
+
+      {/* Pipeline Intelligence Row */}
+      {dashData?.pipelineHealth && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <PipelineHealthCard health={dashData.pipelineHealth} />
+          {dashData?.pipelineProjection && (
+            <PipelineProjectionCard projection={dashData.pipelineProjection} />
+          )}
+        </div>
       )}
 
       {/* KPIs */}
@@ -133,6 +146,9 @@ export default function ObtainDashboardPage() {
         <LeadQualityAreaChart data={apiLeadQuality ?? []} />
         <ICPDistributionDonut clusters={apiClusters ?? []} />
       </div>
+
+      {/* Win Patterns */}
+      <WinPatternsCard />
 
       {selectedLeadId && (
         <LeadDetailDrawer

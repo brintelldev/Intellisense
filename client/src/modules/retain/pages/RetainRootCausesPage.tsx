@@ -25,7 +25,10 @@ export default function RetainRootCausesPage() {
 
   if (isLoading) return <LoadingState rows={6} />;
 
-  const churnCauses = apiCauses ?? [];
+  // API returns either a plain array (legacy) or { causes, summary } (new shape)
+  const isNewShape = apiCauses && !Array.isArray(apiCauses) && "causes" in (apiCauses as any);
+  const churnCauses: any[] = isNewShape ? (apiCauses as any).causes : (apiCauses ?? []);
+  const summary = isNewShape ? (apiCauses as any).summary : null;
 
   if (churnCauses.length === 0) {
     return (
@@ -37,8 +40,10 @@ export default function RetainRootCausesPage() {
     );
   }
 
-  const totalRevAtRisk = churnCauses.reduce((a, c) => a + c.revenueAtRisk, 0);
+  const totalRevAtRisk = churnCauses.reduce((a: number, c: any) => a + c.revenueAtRisk, 0);
   const topCause = churnCauses[0];
+  const totalAtRisk: number = summary?.totalAtRisk ?? 0;
+  const revenueAtRiskChange: number = summary?.revenueAtRiskChange ?? 0;
 
   return (
     <div className="space-y-6 w-full">
@@ -53,7 +58,7 @@ export default function RetainRootCausesPage() {
           variant="retain"
           icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg>}
           label="Empresas Churned (12 meses)"
-          value="47"
+          value={String(totalAtRisk)}
         />
         <MetricCard
           variant="retain"
@@ -66,7 +71,7 @@ export default function RetainRootCausesPage() {
           icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8V7m0 9v1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
           label="Receita Total Perdida"
           value={fmtBRL(totalRevAtRisk)}
-          change={8.2}
+          change={revenueAtRiskChange}
           changeIsGood={false}
         />
       </div>

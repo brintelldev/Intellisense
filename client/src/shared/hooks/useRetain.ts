@@ -44,10 +44,11 @@ export function useRetainCustomers(params: {
 }
 
 // ─── Churn Causes ────────────────────────────────────────────────────────────
+// API may return a plain array (legacy) or { causes: any[]; summary: { totalAtRisk: number; revenueAtRiskChange: number } }
 export function useRetainChurnCauses() {
   return useQuery({
     queryKey: ["retain", "churn-causes"],
-    queryFn: () => api.get<any[]>("/retain/churn-causes"),
+    queryFn: () => api.get<any>("/retain/churn-causes"),
     staleTime: 60_000,
   });
 }

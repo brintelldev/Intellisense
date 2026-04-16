@@ -611,6 +611,77 @@ export async function generateAlerts(tenantId: string): Promise<{
   return { alertsGenerated };
 }
 
+export function generateRetentionPlaybook(
+  riskLevel: string,
+  topFactorKey: string | null,
+  contractRemainingDays: number | null,
+  revenue: number | null,
+): Array<{ week: number; title: string; tasks: string[] }> {
+  const isCritical = riskLevel === "critical";
+  const isHighRevenue = (revenue ?? 0) > 50000;
+
+  const week1Tasks: string[] = [];
+  const week2Tasks: string[] = [];
+  const week3Tasks: string[] = [];
+  const week4Tasks: string[] = [];
+
+  // Week 1: Diagnosis (always urgent for critical/high)
+  if (isCritical) {
+    week1Tasks.push("Ligar para decisor nas próximas 24h, mapear insatisfação");
+    week1Tasks.push("Revisar todos os tickets de suporte abertos");
+  } else {
+    week1Tasks.push("Agendar call de check-in com ponto de contato principal");
+    week1Tasks.push("Revisar histórico de uso e suporte dos últimos 30 dias");
+  }
+  if (topFactorKey === "dimPaymentRegularity") {
+    week1Tasks.push("Acionar financeiro do cliente para entender situação de pagamento");
+  }
+  if (topFactorKey === "dimSatisfaction") {
+    week1Tasks.push("Enviar pesquisa de satisfação detalhada antes da reunião");
+  }
+
+  // Week 2: Value Proposition
+  if (topFactorKey === "dimUsageIntensity" || topFactorKey === "dimInteractionFrequency") {
+    week2Tasks.push("Sessão de treinamento personalizado — funcionalidades não exploradas");
+    week2Tasks.push("Definir KPIs de adoção com o cliente");
+  } else if (topFactorKey === "dimSatisfaction") {
+    week2Tasks.push("Apresentar plano de melhoria baseado no feedback coletado");
+    week2Tasks.push("Oferecer gestor de conta dedicado (se alto valor)");
+  } else {
+    week2Tasks.push("Apresentar proposta de valor renovada e roadmap de produto");
+    week2Tasks.push("Oferecer benefícios exclusivos de fidelidade");
+  }
+  if (isHighRevenue) {
+    week2Tasks.push("Envolver líder de CS sênior na apresentação");
+  }
+
+  // Week 3: Execution
+  week3Tasks.push("Follow-up de todas as ações prometidas na semana anterior");
+  week3Tasks.push("Monitorar evolução do Health Score (comparar com baseline)");
+  if (contractRemainingDays && contractRemainingDays < 60) {
+    week3Tasks.push(`Iniciar negociação de renovação — contrato vence em ${contractRemainingDays} dias`);
+  }
+  if (topFactorKey === "dimPaymentRegularity") {
+    week3Tasks.push("Confirmar regularização dos pagamentos ou plano acordado");
+  }
+
+  // Week 4: Consolidation
+  week4Tasks.push("Reunião de alinhamento final + NPS de follow-up");
+  week4Tasks.push("Documentar aprendizados no CRM para próximo ciclo");
+  if (contractRemainingDays && contractRemainingDays < 60) {
+    week4Tasks.push("Formalizar contrato de renovação ou escalar para diretoria");
+  } else {
+    week4Tasks.push("Discutir renovação antecipada ou oportunidades de expansão");
+  }
+
+  return [
+    { week: 1, title: isCritical ? "Intervenção de Emergência" : "Diagnóstico", tasks: week1Tasks },
+    { week: 2, title: "Proposta de Valor", tasks: week2Tasks },
+    { week: 3, title: "Execução", tasks: week3Tasks },
+    { week: 4, title: "Consolidação", tasks: week4Tasks },
+  ];
+}
+
 export function generateCustomerNarrative(
   customer: {
     name: string;

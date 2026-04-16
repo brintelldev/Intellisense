@@ -7,6 +7,7 @@ import { RevenueBySegmentBar } from "../components/RevenueBySegmentBar";
 import { HealthScoreGauge } from "../components/HealthScoreGauge";
 import { AlertsList } from "../components/AlertsList";
 import { ActionPrioritiesCard } from "../components/ActionPrioritiesCard";
+import { RevenueProjectionCard } from "../components/RevenueProjectionCard";
 import { EmptyState } from "../../../shared/components/EmptyState";
 import { DataFreshnessIndicator } from "../../../shared/components/DataFreshnessIndicator";
 import { LoadingState } from "../../../shared/components/LoadingState";
@@ -60,6 +61,11 @@ export default function RetainDashboardPage() {
           data={actionPriorities}
           onSelectCustomer={(id) => navigate(`/retain/predictions`)}
         />
+      )}
+
+      {/* Revenue Projection */}
+      {apiData?.revenueProjection && (
+        <RevenueProjectionCard projection={apiData.revenueProjection} />
       )}
 
       {/* KPIs */}

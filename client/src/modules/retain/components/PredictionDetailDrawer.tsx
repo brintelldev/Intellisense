@@ -34,6 +34,7 @@ export function PredictionDetailDrawer({ customer, onClose }: Props) {
   const [noteType, setNoteType] = useState("note");
   const [noteContent, setNoteContent] = useState("");
   const [shapOpen, setShapOpen] = useState(false);
+  const [playbookOpen, setPlaybookOpen] = useState(false);
   const { data: apiPrediction, isLoading } = useRetainPrediction(customer?.id ?? null);
   const { data: scoreHistory } = useCustomerScoreHistory(customer?.id ?? null);
   const { data: notes } = useCustomerNotes(customer?.id ?? null);
@@ -45,6 +46,7 @@ export function PredictionDetailDrawer({ customer, onClose }: Props) {
     setRetentionActionDone(false);
     setNoteContent("");
     setShapOpen(false);
+    setPlaybookOpen(false);
   }, [customer?.id]);
 
   if (!customer) return null;
@@ -61,6 +63,19 @@ export function PredictionDetailDrawer({ customer, onClose }: Props) {
           <div className="flex items-center gap-2 flex-wrap">
             <h2 className="text-xl font-bold text-slate-900">{customer.name}</h2>
             <RiskBadge level={customer.riskLevel} />
+            {/* Countdown badge */}
+            {prediction?.scoreTrend?.direction === "declining" && Math.abs(prediction.scoreTrend.delta) > 5 && customer.healthScore > 0 && (() => {
+              const weeksAnalyzed = prediction.scoreTrend.weeksAnalyzed ?? 4;
+              const deltaPerWeek = Math.abs(prediction.scoreTrend.delta) / Math.max(weeksAnalyzed, 1);
+              const daysUntilChurn = deltaPerWeek > 0 ? Math.round(customer.healthScore / (deltaPerWeek / 7)) : null;
+              if (!daysUntilChurn || daysUntilChurn >= 90) return null;
+              const colorClass = daysUntilChurn < 15 ? "bg-red-600 text-white" : daysUntilChurn < 30 ? "bg-orange-500 text-white" : "bg-amber-100 text-amber-800";
+              return (
+                <span className={`text-xs font-bold px-2 py-1 rounded-full ${colorClass}`}>
+                  ⏱ ~{daysUntilChurn} dias até churn
+                </span>
+              );
+            })()}
           </div>
           <p className="text-sm text-slate-500">
             {customer.customerCode} · {customer.segment}{customer.city || customer.state ? ` · ${[customer.city, customer.state].filter(Boolean).join("/")}` : ""}
@@ -191,6 +206,43 @@ export function PredictionDetailDrawer({ customer, onClose }: Props) {
             </button>
             {retentionActionDone && (
               <p className="text-sm text-[#293b83] mt-2 font-medium">✓ Ação de Retenção Registrada: Contrato revisado</p>
+            )}
+          </div>
+        )}
+
+        {/* Retention Playbook - collapsible */}
+        {prediction?.retentionPlaybook && prediction.retentionPlaybook.length > 0 && (
+          <div className="bg-amber-50 rounded-xl overflow-hidden border border-amber-100">
+            <button
+              onClick={() => setPlaybookOpen(!playbookOpen)}
+              className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-amber-900 hover:bg-amber-100 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <span>⚡</span>
+                <span>Plano de Retenção — 4 Semanas</span>
+              </div>
+              <svg className={`w-4 h-4 text-amber-600 transition-transform ${playbookOpen ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {playbookOpen && (
+              <div className="px-4 pb-4 space-y-3">
+                {prediction.retentionPlaybook.map((week: any) => (
+                  <div key={week.week} className="bg-white rounded-lg p-3 border border-amber-100">
+                    <p className="text-xs font-bold text-amber-800 mb-1.5">
+                      Semana {week.week}: {week.title}
+                    </p>
+                    <ul className="space-y-1">
+                      {week.tasks.map((task: string, i: number) => (
+                        <li key={i} className="text-xs text-slate-600 flex items-start gap-1.5">
+                          <span className="text-amber-500 mt-0.5 flex-shrink-0">→</span>
+                          {task}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         )}
