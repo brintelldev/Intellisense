@@ -127,7 +127,7 @@ export function LeadDetailDrawer({ lead, onClose }: Props) {
           </div>
           <div className="bg-slate-50 rounded-xl p-3 text-center">
             <p className="text-xs text-slate-500 mb-1">Prob. Conversão</p>
-            <p className="text-xl font-bold text-[#10B981]">{(lead.conversionProbability * 100).toFixed(0)}%</p>
+            <p className="text-xl font-bold text-[#10B981]">{lead.conversionProbability != null ? `${(lead.conversionProbability * 100).toFixed(0)}%` : "—"}</p>
           </div>
         </div>
 
