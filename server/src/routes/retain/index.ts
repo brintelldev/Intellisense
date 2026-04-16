@@ -1077,6 +1077,7 @@ retainRouter.get("/alerts", async (req, res) => {
       severity: r.alert.severity,
       isRead: r.alert.isRead,
       createdAt: r.alert.createdAt,
+      timeAgo: formatTimeAgo(r.alert.createdAt),
     }));
 
     res.json(data);

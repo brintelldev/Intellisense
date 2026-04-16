@@ -9,14 +9,14 @@ interface FunnelChartProps {
 }
 
 export function FunnelChart({ stages, className, compact = false }: FunnelChartProps) {
-  const maxLeads = stages[0]?.leadsCount ?? 1;
+  const maxLeads = stages[0]?.leadsCount || 1;
 
   return (
     <div className={cn("flex items-stretch gap-0", className)}>
       {stages.map((stage, i) => {
         const pct = (stage.leadsCount / maxLeads) * 100;
         const isBottleneck = stage.isBottleneck;
-        const dropOff = stage.dropOffRate > 0 ? `${(stage.dropOffRate * 100).toFixed(0)}% perdidos` : null;
+        const dropOff = (stage.dropOffRate > 0 && isFinite(stage.dropOffRate)) ? `${(stage.dropOffRate * 100).toFixed(0)}% perdidos` : null;
         const isLast = i === stages.length - 1;
 
         return (
