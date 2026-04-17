@@ -20,6 +20,7 @@ interface ClusterProfile {
   churnRate: number;
   churnRate30d: number;
   churnRate90d: number;
+  avgTenureDays: number;
 }
 
 type ClusterType = "ideal" | "good" | "anti";
@@ -67,6 +68,7 @@ export async function generateIcpClusters(tenantId: string): Promise<{
         churnRate: 0,
         churnRate30d: 0,
         churnRate90d: 0,
+        avgTenureDays: 0,
       });
     }
 
@@ -74,6 +76,7 @@ export async function generateIcpClusters(tenantId: string): Promise<{
     profile.customerCount++;
     profile.avgLtv += (customer.dimRevenue ?? 0) * ((customer.dimTenureDays ?? 365) / 30);
     profile.avgHealthScore += customer.healthScore ?? 50;
+    profile.avgTenureDays += customer.dimTenureDays ?? 0;
     if (customer.status === "churned") {
       profile.churnRate++;
     }
@@ -95,6 +98,7 @@ export async function generateIcpClusters(tenantId: string): Promise<{
         churnRate: 0,
         churnRate30d: 0,
         churnRate90d: 0,
+        avgTenureDays: 0,
       });
     }
 
@@ -116,9 +120,11 @@ export async function generateIcpClusters(tenantId: string): Promise<{
     const totalEntities = p.customerCount + p.leadCount;
     if (p.customerCount > 0) {
       p.avgHealthScore /= p.customerCount;
+      p.avgTenureDays /= p.customerCount;
       p.churnRate = p.churnRate / p.customerCount;
-      p.churnRate30d = p.churnRate * 0.08; // rough estimate
-      p.churnRate90d = p.churnRate * 0.25;
+      // 30d/90d churn: scale the annual churn rate to those windows
+      p.churnRate30d = 1 - Math.pow(1 - p.churnRate, 1 / 12);   // monthly equivalent
+      p.churnRate90d = 1 - Math.pow(1 - p.churnRate, 3 / 12);   // quarterly equivalent
     }
     if (totalEntities > 0) {
       p.avgLtv /= totalEntities;
@@ -198,7 +204,7 @@ export async function generateIcpClusters(tenantId: string): Promise<{
         composite: Math.round(p.composite * 100) / 100,
       },
       averageLtv: Math.round(p.avgLtv),
-      averageTenureDays: Math.round(p.avgHealthScore > 50 ? 540 : 270), // estimate
+      averageTenureDays: Math.round(p.avgTenureDays),
       averageConversionRate: Math.round(p.avgConversionRate * 100) / 100,
       averageCac: p.avgCac > 0 ? Math.round(p.avgCac) : null,
       churnRate30d: Math.round(p.churnRate30d * 100) / 100,
