@@ -1,0 +1,33 @@
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+COPY package.json package-lock.json* ./
+RUN npm ci
+
+COPY server ./server
+COPY shared ./shared
+COPY tsconfig.json ./
+
+# Compile TypeScript to JS
+RUN npx tsc -p tsconfig.json --outDir dist || true
+# Fallback: use tsx to run directly (simpler for first deploy)
+
+
+FROM node:20-alpine
+
+WORKDIR /app
+
+COPY package.json package-lock.json* ./
+RUN npm ci --omit=dev
+
+COPY --from=builder /app/server ./server
+COPY --from=builder /app/shared ./shared
+COPY tsconfig.json ./
+
+# Install tsx for runtime TS execution (avoids complex build config)
+RUN npm install -g tsx
+
+EXPOSE 3001
+
+CMD ["tsx", "server/src/index.ts"]
