@@ -1,27 +1,35 @@
 version: '3.8'
 
-# Production compose — uses an EXTERNAL PostgreSQL container.
-# Before running:
-#   1. docker network create intellisense-net
-#   2. docker network connect intellisense-net <seu-container-postgres>
-#   3. cp .env.production .env.prod.local  →  preencha os valores reais
-#   4. docker compose -f docker-compose.prod.yml --env-file .env.prod.local up -d --build
+# ─── Produção — conecta ao container PostgreSQL já existente ─────────────────
+#
+# Pré-requisitos na VPS (rodar uma vez):
+#   Nenhum — o container postgres-intellisense e a rede intellisense_net
+#   já existem. Basta subir este compose na mesma rede.
+#
+# Deploy:
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Migrations (rodar após o primeiro deploy):
+#   docker compose -f docker-compose.prod.yml exec server npx drizzle-kit push
+# ─────────────────────────────────────────────────────────────────────────────
 
 services:
   server:
     build:
       context: .
       dockerfile: Dockerfile.server.prod
+    container_name: intellisense-server
     restart: unless-stopped
     environment:
       NODE_ENV: production
       PORT: 3001
-      DATABASE_URL: ${DATABASE_URL}
+      # Dentro da rede intellisense_net o Postgres é acessado pelo nome do container
+      # Senha URL-encoded (original: n9\#)+w[H9J4$p9i)
+      DATABASE_URL: postgresql://admin:n9%5C%23%29%2Bw%5BH9J4%24p9i@postgres-intellisense:5432/intellisense
       SESSION_SECRET: ${SESSION_SECRET}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost}
     networks:
-      - intellisense-net
-    depends_on: []   # PostgreSQL is external; remove db dependency
+      - intellisense_net
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3001/api/health || exit 1"]
       interval: 30s
@@ -33,15 +41,16 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.client.prod
+    container_name: intellisense-client
     restart: unless-stopped
     ports:
-      - "80:80"       # HTTP — configure SSL via reverse proxy (Nginx/Caddy) na VPS
+      - "80:80"
     networks:
-      - intellisense-net
+      - intellisense_net
     depends_on:
       server:
         condition: service_healthy
 
 networks:
-  intellisense-net:
-    external: true   # rede já criada manualmente; compartilhada com o container Postgres
+  intellisense_net:
+    external: true   # rede já criada pelo compose do Postgres
