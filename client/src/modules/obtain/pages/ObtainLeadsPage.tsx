@@ -17,6 +17,7 @@ interface Filters {
   source: string;
   icpCluster: string;
   minScore: number;
+  onlyToday: boolean;
 }
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -87,14 +88,13 @@ const COLUMNS: ColumnDef<Lead>[] = [
       );
     },
   },
-  {
-    key: "assignedTo", header: "Responsável", sortable: true, width: "w-32",
-    render: (row) => <span className="text-xs text-slate-600">{row.assignedTo}</span>,
-  },
 ];
 
 export default function ObtainLeadsPage() {
-  const [filters, setFilters] = useState<Filters>({ search: "", scoreTier: "all", status: "all", source: "all", icpCluster: "all", minScore: 0 });
+  const [filters, setFilters] = useState<Filters>({
+    search: "", scoreTier: "all", status: "all", source: "all",
+    icpCluster: "all", minScore: 0, onlyToday: false,
+  });
   const [selected, setSelected] = useState<Lead | null>(null);
   const [, navigate] = useLocation();
 
@@ -104,27 +104,28 @@ export default function ObtainLeadsPage() {
     source: filters.source !== "all" ? filters.source : undefined,
     search: filters.search || undefined,
   });
-
   const leads = apiLeadsData?.data ?? [];
+  const priorityLeadIds = useMemo(() => new Set<string>(), []);
 
   const filtered = useMemo(() => {
     return leads.filter((l: Lead) => {
       if (filters.scoreTier !== "all" && l.scoreTier !== filters.scoreTier) return false;
       if (filters.status !== "all" && l.status !== filters.status) return false;
       if (filters.source !== "all" && l.source !== filters.source) return false;
-      if (filters.icpCluster !== "all" && (l as any).icpClusterId !== filters.icpCluster) return false;
+      if (filters.icpCluster !== "all" && (l as any).icpCluster !== filters.icpCluster) return false;
       if (filters.minScore > 0 && (l as any).score < filters.minScore) return false;
+      if (filters.onlyToday && !priorityLeadIds.has(l.id)) return false;
       if (filters.search) {
         const q = filters.search.toLowerCase();
         if (!l.name.toLowerCase().includes(q) && !l.company.toLowerCase().includes(q)) return false;
       }
       return true;
     });
-  }, [filters, leads]);
+  }, [filters, leads, priorityLeadIds]);
 
   if (isLoading) return <LoadingState rows={8} />;
 
-  if (filtered.length === 0 && !filters.search && filters.scoreTier === "all" && filters.status === "all" && filters.source === "all") {
+  if (filtered.length === 0 && !filters.search && filters.scoreTier === "all" && filters.status === "all" && filters.source === "all" && !filters.onlyToday) {
     return (
       <EmptyState
         title="Nenhum lead encontrado"
@@ -134,6 +135,8 @@ export default function ObtainLeadsPage() {
     );
   }
 
+  const todayCount = 0;
+
   return (
     <div className="space-y-4 w-full">
       <div className="flex items-center gap-2">
@@ -142,7 +145,30 @@ export default function ObtainLeadsPage() {
         <span className="ml-auto text-sm text-slate-500">{filtered.length} leads encontrados</span>
       </div>
 
-      <LeadFilters filters={filters} onChange={setFilters} />
+      {/* Filter bar with "Só os de hoje" toggle */}
+      <div className="flex flex-col gap-3">
+        <LeadFilters filters={filters} onChange={(f) => setFilters(prev => ({ ...prev, ...f }))} />
+        {todayCount > 0 && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setFilters(f => ({ ...f, onlyToday: !f.onlyToday }))}
+              className={`flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-full border transition-colors ${
+                filters.onlyToday
+                  ? "bg-[#10B981] text-white border-[#10B981]"
+                  : "bg-white text-slate-600 border-slate-200 hover:border-[#10B981] hover:text-[#10B981]"
+              }`}
+            >
+              <span className={`w-2 h-2 rounded-full ${filters.onlyToday ? "bg-white" : "bg-[#10B981] animate-pulse"}`} />
+              Agir hoje ({todayCount})
+            </button>
+            {filters.onlyToday && (
+              <span className="text-xs text-slate-500">
+                Mostrando apenas leads com recomendação de ação hoje
+              </span>
+            )}
+          </div>
+        )}
+      </div>
 
       <DataTable
         columns={COLUMNS}

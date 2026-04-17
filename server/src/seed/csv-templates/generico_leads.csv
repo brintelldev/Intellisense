@@ -1,0 +1,4 @@
+nome_contato,empresa,segmento,porte,cidade,estado,email,telefone,origem,campanha
+João Silva,Empresa Exemplo SA,Tecnologia,medium,São Paulo,SP,joao@exemplo.com.br,11991234567,referral,Indicação Direta
+Maria Santos,Consultoria ABC Ltda,Serviços,small,Rio de Janeiro,RJ,maria@abc.com.br,21998765432,event,Feira do Setor 2026
+Pedro Costa,Indústrias XYZ,Manufatura,large,Campinas,SP,pedro@xyz.com.br,19997654321,outbound,Prospecção Ativa

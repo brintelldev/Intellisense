@@ -1,5 +1,5 @@
 /**
- * app.ts - Exporta o app Express SEM chamar app.listen()
+ * app.ts v2 - Exporta o app Express SEM chamar app.listen()
  * Isso permite ao Supertest fazer requisições diretas sem precisar de uma porta real.
  */
 import express from "express";

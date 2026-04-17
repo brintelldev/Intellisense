@@ -58,7 +58,7 @@ export function useRetainAnalyticsTrend() {
   return useQuery({
     queryKey: ["retain", "analytics-trend"],
     queryFn: () => api.get<any[]>("/retain/analytics/trend"),
-    staleTime: 60_000,
+    staleTime: 0,
   });
 }
 
@@ -135,7 +135,7 @@ export function useRetainRevenueBySegment() {
   return useQuery({
     queryKey: ["retain", "revenue-by-segment"],
     queryFn: () => api.get<any[]>("/retain/revenue-by-segment"),
-    staleTime: 60_000,
+    staleTime: 0,
   });
 }
 

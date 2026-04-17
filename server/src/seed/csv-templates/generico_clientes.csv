@@ -1,0 +1,4 @@
+codigo,razao_social,faturamento_mensal,nps,dias_restantes_contrato,horas_uso_mes,dias_atraso_pgto,meses_contrato,frequencia_contato,chamados_abertos,dias_sem_pedido
+CLI001,Empresa Exemplo SA,98000,72,180,65,0,24,80,1,5
+CLI002,Distribuidora Central Ltda,54000,45,90,40,8,12,52,4,18
+CLI003,Industria Norte Ltda,210000,88,365,95,2,48,90,0,2

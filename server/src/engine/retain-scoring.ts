@@ -401,6 +401,10 @@ export async function generateAnalyticsSnapshot(tenantId: string, snapshotDate?:
   const churnRate = total > 0 ? (churned / total) * 100 : 0;
   const today = snapshotDate ?? new Date().toISOString().split("T")[0];
 
+  // Upsert: delete any existing snapshot for this day first, then insert fresh
+  await db.delete(retainAnalytics).where(
+    and(eq(retainAnalytics.tenantId, tenantId), eq(retainAnalytics.snapshotDate, today)),
+  );
   await db.insert(retainAnalytics).values({
     tenantId,
     snapshotDate: today,
@@ -514,6 +518,14 @@ export async function generateAlerts(tenantId: string): Promise<{
 
   let alertsGenerated = 0;
 
+  // Build a set of ALL existing alerts (any date) to prevent duplicates across runs.
+  // One alert per (customer, type) is enough — re-scoring shouldn't re-fire the same alert.
+  const existingAlerts = await db
+    .select({ customerId: retainAlerts.customerId, type: retainAlerts.type })
+    .from(retainAlerts)
+    .where(eq(retainAlerts.tenantId, tenantId));
+  const todayAlertKeys = new Set(existingAlerts.map(a => `${a.customerId}:${a.type}`));
+
   for (const customer of allCustomers) {
     const alerts: Array<{
       type: "health_drop" | "churn_risk" | "contract_expiring" | "payment_delayed" | "score_drop";
@@ -594,20 +606,19 @@ export async function generateAlerts(tenantId: string): Promise<{
       }
     }
 
-    // Insert alerts (avoiding duplicates for the same day)
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
     for (const alert of alerts) {
-      await db.insert(retainAlerts).values({
-        tenantId,
-        customerId: customer.id,
-        type: alert.type,
-        message: alert.message,
-        severity: alert.severity,
-        sourceUploadId: customer.sourceUploadId ?? null,
-      });
-      alertsGenerated++;
+      if (!todayAlertKeys.has(`${customer.id}:${alert.type}`)) {
+        await db.insert(retainAlerts).values({
+          tenantId,
+          customerId: customer.id,
+          type: alert.type,
+          message: alert.message,
+          severity: alert.severity,
+          sourceUploadId: customer.sourceUploadId ?? null,
+        });
+        todayAlertKeys.add(`${customer.id}:${alert.type}`);
+        alertsGenerated++;
+      }
     }
   }
 

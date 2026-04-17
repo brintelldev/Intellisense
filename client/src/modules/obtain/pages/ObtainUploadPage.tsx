@@ -2,23 +2,51 @@ import { useState, useRef } from "react";
 import { useLocation } from "wouter";
 import { ColumnMapper } from "../../../shared/components/ColumnMapper";
 import { Progress } from "../../../shared/components/ui/progress";
+import { ExecutiveInsightsStrip } from "../components/ExecutiveInsightsStrip";
 import { useObtainUploads, useUploadObtainCSV, useSuggestObtainMapping, useDeleteObtainUpload } from "../../../shared/hooks/useObtain";
 import { LoadingState } from "../../../shared/components/LoadingState";
 import { ConfirmDialog } from "../../../shared/components/ConfirmDialog";
 
 const SYSTEM_FIELDS = [
-  { key: "id", label: "Identificador do lead", required: true },
-  { key: "name", label: "Nome do contato", required: true },
-  { key: "company", label: "Nome da empresa", required: true },
-  { key: "industry", label: "Setor / Indústria" },
-  { key: "companySize", label: "Porte da empresa" },
-  { key: "city", label: "Cidade" },
-  { key: "state", label: "Estado" },
-  { key: "email", label: "E-mail" },
-  { key: "phone", label: "Telefone" },
-  { key: "source", label: "Origem do lead" },
-  { key: "campaign", label: "Campanha" },
+  { key: "id",          label: "Identificador do lead", required: true,  tier: "required"  as const },
+  { key: "name",        label: "Nome do contato",       required: true,  tier: "required"  as const },
+  { key: "company",     label: "Nome da empresa",       required: true,  tier: "required"  as const },
+  { key: "industry",    label: "Setor / Indústria",     required: false, tier: "improves"  as const },
+  { key: "companySize", label: "Porte da empresa",      required: false, tier: "improves"  as const },
+  { key: "email",       label: "E-mail",                required: false, tier: "improves"  as const },
+  { key: "source",      label: "Origem do lead",        required: false, tier: "improves"  as const },
+  { key: "city",        label: "Cidade",                required: false, tier: "optional"  as const },
+  { key: "state",       label: "Estado",                required: false, tier: "optional"  as const },
+  { key: "phone",       label: "Telefone",              required: false, tier: "optional"  as const },
+  { key: "campaign",    label: "Campanha",              required: false, tier: "optional"  as const },
 ];
+
+const TIER_INFO = {
+  required: {
+    icon: "✅",
+    label: "Obrigatórias",
+    description: "Importação básica do lead",
+    color: "text-emerald-700",
+    bg: "bg-emerald-50",
+    border: "border-emerald-200",
+  },
+  improves: {
+    icon: "⚡",
+    label: "Melhoram análise",
+    description: "Score + ICP + análise de canal",
+    color: "text-amber-700",
+    bg: "bg-amber-50",
+    border: "border-amber-200",
+  },
+  optional: {
+    icon: "ℹ️",
+    label: "Opcionais",
+    description: "Enriquecimento de contato e geografia",
+    color: "text-slate-500",
+    bg: "bg-slate-50",
+    border: "border-slate-200",
+  },
+};
 
 async function readCsvHeaders(file: File): Promise<string[]> {
   const text = await file.slice(0, 4096).text();
@@ -60,6 +88,7 @@ export default function ObtainUploadPage() {
   const [error, setError] = useState<string | null>(null);
   const [uploadResult, setUploadResult] = useState<any>(null);
   const [serverSuggestions, setServerSuggestions] = useState<any[] | undefined>(undefined);
+  const [coveragePct, setCoveragePct] = useState<number>(0);
   const fileRef = useRef<HTMLInputElement>(null);
   const fileObjRef = useRef<File | null>(null);
 
@@ -153,17 +182,65 @@ export default function ObtainUploadPage() {
 
       {/* Upload step */}
       {step === "upload" && (
-        <div
-          className="border-2 border-dashed border-slate-200 rounded-xl p-12 text-center hover:border-[#10B981] hover:bg-[#10B981]/5 transition-colors cursor-pointer"
-          onDrop={handleDrop}
-          onDragOver={(e) => e.preventDefault()}
-          onClick={() => fileRef.current?.click()}
-        >
-          <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
-          <svg className="w-12 h-12 text-slate-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
-          <p className="text-slate-600 font-medium">Arraste seu arquivo CSV aqui</p>
-          <p className="text-xs text-slate-400 mt-1">ou clique para selecionar — máx. 50MB</p>
-          <p className="text-xs text-slate-400 mt-3">Formatos aceitos: .csv com separador vírgula ou ponto-e-vírgula</p>
+        <div className="space-y-4">
+          {/* Field checklist — 3 tiers */}
+          <div className="grid grid-cols-3 gap-3">
+            {(["required", "improves", "optional"] as const).map(tier => {
+              const info = TIER_INFO[tier];
+              const fields = SYSTEM_FIELDS.filter(f => f.tier === tier);
+              return (
+                <div key={tier} className={`rounded-xl border p-4 ${info.bg} ${info.border}`}>
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span className="text-base">{info.icon}</span>
+                    <span className={`text-sm font-semibold ${info.color}`}>{info.label}</span>
+                  </div>
+                  <p className="text-sm text-slate-500 mb-3">{info.description}</p>
+                  <ul className="space-y-1">
+                    {fields.map(f => (
+                      <li key={f.key} className="text-sm text-slate-600 flex items-center gap-1.5">
+                        <span className="w-1 h-1 rounded-full bg-slate-400 flex-shrink-0" />
+                        {f.label}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Template download */}
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-slate-500">Não tem um CSV? Baixe um template:</span>
+            {[
+              { sector: "generico", label: "Genérico" },
+              { sector: "construcao", label: "Construção" },
+              { sector: "mineracao", label: "Mineração" },
+            ].map(t => (
+              <a
+                key={t.sector}
+                href={`/api/obtain/templates/${t.sector}`}
+                download
+                onClick={(e) => e.stopPropagation()}
+                className="text-sm font-medium text-[#10B981] hover:text-[#059669] underline underline-offset-2"
+              >
+                {t.label}
+              </a>
+            ))}
+          </div>
+
+          {/* Drop zone */}
+          <div
+            className="border-2 border-dashed border-slate-200 rounded-xl p-10 text-center hover:border-[#10B981] hover:bg-[#10B981]/5 transition-colors cursor-pointer"
+            onDrop={handleDrop}
+            onDragOver={(e) => e.preventDefault()}
+            onClick={() => fileRef.current?.click()}
+          >
+            <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
+            <svg className="w-10 h-10 text-slate-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+            <p className="text-slate-600 font-medium">Arraste seu arquivo CSV aqui</p>
+            <p className="text-xs text-slate-400 mt-1">ou clique para selecionar — máx. 50MB</p>
+            <p className="text-xs text-slate-400 mt-3">Formatos aceitos: .csv com separador vírgula ou ponto-e-vírgula</p>
+          </div>
         </div>
       )}
 
@@ -174,7 +251,32 @@ export default function ObtainUploadPage() {
             <svg className="w-5 h-5 text-blue-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" /></svg>
             <p className="text-sm text-blue-700">Arquivo <strong>{filename}</strong> — <strong>{csvColumns.length} colunas</strong> detectadas — mapeie para os campos do sistema</p>
           </div>
-          <ColumnMapper csvColumns={csvColumns} systemFields={SYSTEM_FIELDS} onMappingChange={setMapping} serverSuggestions={serverSuggestions} />
+          <ColumnMapper
+            csvColumns={csvColumns}
+            systemFields={SYSTEM_FIELDS}
+            onMappingChange={setMapping}
+            serverSuggestions={serverSuggestions}
+            onCoverageChange={setCoveragePct}
+          />
+          {/* Readiness banner */}
+          {coveragePct > 0 && (
+            <div className={`flex items-center gap-3 rounded-lg px-4 py-3 border text-sm ${
+              coveragePct >= 80
+                ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+                : coveragePct >= 50
+                ? "bg-amber-50 border-amber-200 text-amber-800"
+                : "bg-red-50 border-red-200 text-red-800"
+            }`}>
+              <span className="font-bold">{coveragePct}%</span>
+              <span className="flex-1">
+                {coveragePct >= 80
+                  ? "Diagnóstico completo: score + ICP + LTV + cadência disponíveis"
+                  : coveragePct >= 50
+                  ? "Diagnóstico parcial: score + ICP disponíveis, LTV aproximado"
+                  : "Diagnóstico básico: adicione Setor, Porte e Origem para análise completa"}
+              </span>
+            </div>
+          )}
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3 flex items-center gap-2">
               <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" /></svg>
@@ -216,7 +318,7 @@ export default function ObtainUploadPage() {
             {/* Intelligence Summary */}
             {uploadResult.intelligenceSummary && (
               <div className="space-y-3 mb-4">
-                {/* Hero banner */}
+                {/* Hero banner — counts */}
                 <div className="bg-gradient-to-r from-[#10B981]/10 to-emerald-50 rounded-xl p-4 border border-[#10B981]/20">
                   <div className="flex items-center gap-3 mb-2">
                     <div className="w-8 h-8 rounded-full bg-[#10B981] flex items-center justify-center flex-shrink-0">
@@ -244,6 +346,12 @@ export default function ObtainUploadPage() {
                     </div>
                   </div>
                 </div>
+
+                {/* Executive Insights Strip (full variant) */}
+                <ExecutiveInsightsStrip
+                  data={uploadResult.intelligenceSummary}
+                  variant="full"
+                />
 
                 {/* Top hot leads */}
                 {uploadResult.intelligenceSummary.topHotLeads?.length > 0 && (

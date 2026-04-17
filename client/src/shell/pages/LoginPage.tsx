@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
-import { Mail, Lock, Eye, EyeOff, ShieldCheck } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { useLogin } from "../../shared/hooks/useAuth";
 import { useAuthContext } from "../contexts/AuthContext";
 import RegisterPage from "./RegisterPage";
@@ -12,7 +12,15 @@ export default function LoginPage() {
   const [showRegister, setShowRegister] = useState(false);
   const [, navigate] = useLocation();
   const login = useLogin();
-  const { activateDemo } = useAuthContext();
+  const { activateDemo, isAuthenticated, isDemoMode } = useAuthContext();
+
+  // Redirect after real login (not demo mode).
+  // Checking !isDemoMode prevents the effect from firing when localStorage
+  // has a stale "is-demo" flag, which would redirect the user before they
+  // can fill in the login form.
+  useEffect(() => {
+    if (isAuthenticated && !isDemoMode) navigate("/");
+  }, [isAuthenticated, isDemoMode]);
 
   if (showRegister) {
     return <RegisterPage onBack={() => setShowRegister(false)} />;
@@ -22,7 +30,7 @@ export default function LoginPage() {
     e.preventDefault();
     try {
       await login.mutateAsync({ email, password });
-      navigate("/");
+      // Navigation is handled by the useEffect above once isAuthenticated becomes true
     } catch {
       // error shown in UI
     }
@@ -30,22 +38,19 @@ export default function LoginPage() {
 
   const handleDemo = () => {
     activateDemo();
-    navigate("/");
+    navigate("/"); // demo mode: isDemoMode=true so the useEffect won't fire, navigate explicitly
   };
 
   return (
     <div className="min-h-screen bg-[#f8fafc] flex items-center justify-center">
       <div className="bg-white rounded-xl shadow-sm p-8 w-full max-w-[420px] space-y-6">
         {/* Logo */}
-        <div className="text-center space-y-2">
-          <div className="w-14 h-14 brand-gradient rounded-xl mx-auto flex items-center justify-center">
-            <ShieldCheck className="w-7 h-7 text-white" />
-          </div>
-          <h1 className="text-2xl font-bold">
-            <span className="text-[#293b83]">Intelli</span>
-            <span className="text-[#67b4b0]">Sense</span>
-          </h1>
-          <p className="text-xs text-[#b4b4b4]">Plataforma de Inteligência do Ciclo de Vida do Cliente</p>
+        <div className="flex justify-center py-2">
+          <img
+            src="/logo.png"
+            alt="IntelliSense"
+            className="w-72 h-auto object-contain"
+          />
         </div>
 
         <div className="space-y-1">

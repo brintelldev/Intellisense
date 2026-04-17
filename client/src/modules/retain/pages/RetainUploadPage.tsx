@@ -13,18 +13,45 @@ import {
 } from "../../../shared/hooks/useRetain";
 
 const SYSTEM_FIELDS = [
-  { key: "id", label: "Identificador do cliente", required: true },
-  { key: "name", label: "Nome", required: true },
-  { key: "revenue", label: "Receita / Valor do Contrato", required: true },
-  { key: "paymentRegularity", label: "Regularidade de pagamento" },
-  { key: "tenureDays", label: "Tempo de relacionamento" },
-  { key: "interactionFrequency", label: "Frequência de interação" },
-  { key: "supportVolume", label: "Volume de suporte" },
-  { key: "satisfaction", label: "Satisfação / NPS" },
-  { key: "contractRemainingDays", label: "Vínculo contratual" },
-  { key: "usageIntensity", label: "Intensidade de uso" },
-  { key: "recencyDays", label: "Recência" },
+  { key: "id",                   label: "Identificador do cliente",   required: true,  tier: "required" as const },
+  { key: "name",                 label: "Nome",                        required: true,  tier: "required" as const },
+  { key: "revenue",              label: "Receita / Valor do Contrato", required: true,  tier: "required" as const },
+  { key: "satisfaction",         label: "Satisfação / NPS",            required: false, tier: "improves" as const },
+  { key: "contractRemainingDays",label: "Vínculo contratual",          required: false, tier: "improves" as const },
+  { key: "usageIntensity",       label: "Intensidade de uso",          required: false, tier: "improves" as const },
+  { key: "paymentRegularity",    label: "Regularidade de pagamento",   required: false, tier: "improves" as const },
+  { key: "tenureDays",           label: "Tempo de relacionamento",     required: false, tier: "improves" as const },
+  { key: "interactionFrequency", label: "Frequência de interação",     required: false, tier: "optional" as const },
+  { key: "supportVolume",        label: "Volume de suporte",           required: false, tier: "optional" as const },
+  { key: "recencyDays",          label: "Recência",                    required: false, tier: "optional" as const },
 ];
+
+const TIER_INFO = {
+  required: {
+    icon: "✅",
+    label: "Obrigatórias",
+    description: "Importação básica do cliente",
+    color: "text-emerald-700",
+    bg: "bg-emerald-50",
+    border: "border-emerald-200",
+  },
+  improves: {
+    icon: "⚡",
+    label: "Melhoram análise",
+    description: "Score de saúde + predição de churn",
+    color: "text-amber-700",
+    bg: "bg-amber-50",
+    border: "border-amber-200",
+  },
+  optional: {
+    icon: "ℹ️",
+    label: "Opcionais",
+    description: "Análise comportamental avançada",
+    color: "text-slate-500",
+    bg: "bg-slate-50",
+    border: "border-slate-200",
+  },
+};
 
 const DIM_LABELS: Record<string, string> = {
   revenue: "Receita",
@@ -191,23 +218,30 @@ export default function RetainUploadPage() {
       </div>
 
       {/* Step indicator */}
-      {step !== "upload" && step !== "done" && (
-        <div className="flex items-center gap-2 text-xs text-slate-500">
+      {step !== "done" && (
+        <div className="flex items-center gap-1 text-xs">
           {[
+            { id: "upload", label: "Upload" },
             { id: "mapping", label: "Mapeamento" },
             { id: "preview", label: "Preview" },
             { id: "processing", label: "Processando" },
           ].map((s, i) => {
-            const steps: Step[] = ["mapping", "preview", "processing"];
-            const currentIdx = steps.indexOf(step as any);
-            const thisIdx = steps.indexOf(s.id as any);
+            const steps: Step[] = ["upload", "mapping", "preview", "processing"];
+            const currentIdx = steps.indexOf(step as Step);
+            const thisIdx = i;
             const active = thisIdx === currentIdx;
             const done = thisIdx < currentIdx;
             return (
-              <div key={s.id} className="flex items-center gap-2">
-                {i > 0 && <div className="w-8 h-px bg-slate-200" />}
-                <span className={`flex items-center gap-1 font-medium ${active ? "text-[#293b83]" : done ? "text-green-600" : "text-slate-400"}`}>
-                  {done ? "✓" : `${i + 1}.`} {s.label}
+              <div key={s.id} className="flex items-center gap-1">
+                {i > 0 && <div className="w-6 h-px bg-slate-200 mx-1" />}
+                <span className={`flex items-center gap-1.5 font-medium px-2 py-0.5 rounded-full transition-colors ${
+                  active ? "bg-[#293b83]/10 text-[#293b83]" : done ? "text-green-600" : "text-slate-400"
+                }`}>
+                  {done
+                    ? <span className="w-4 h-4 rounded-full bg-green-100 text-green-600 flex items-center justify-center text-[10px] font-bold">✓</span>
+                    : <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold ${active ? "bg-[#293b83] text-white" : "bg-slate-200 text-slate-500"}`}>{i + 1}</span>
+                  }
+                  {s.label}
                 </span>
               </div>
             );
@@ -217,18 +251,69 @@ export default function RetainUploadPage() {
 
       {/* ── Step: upload ───────────────────────────────────────────────────── */}
       {step === "upload" && (
-        <div
-          className="bg-white rounded-xl border-2 border-dashed border-slate-300 hover:border-[#293b83] transition-colors cursor-pointer p-12 text-center"
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={handleDrop}
-          onClick={() => fileRef.current?.click()}
-        >
-          <input ref={fileRef} type="file" accept=".csv,.xlsx" className="hidden" onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
-          <svg className="w-16 h-16 text-slate-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-          </svg>
-          <p className="text-slate-700 font-medium text-lg">Arraste seu arquivo CSV ou clique para selecionar</p>
-          <p className="text-sm text-slate-400 mt-1">Qualquer formato CSV — UTF-8, Latin-1, vírgula ou ponto-e-vírgula — Máximo 50MB</p>
+        <div className="space-y-4">
+          {/* 3-tier checklist */}
+          <div className="grid grid-cols-3 gap-4">
+            {(["required", "improves", "optional"] as const).map((tier) => {
+              const info = TIER_INFO[tier];
+              const fields = SYSTEM_FIELDS.filter(f => f.tier === tier);
+              return (
+                <div key={tier} className={`rounded-xl border p-4 ${info.bg} ${info.border}`}>
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span className="text-base">{info.icon}</span>
+                    <span className={`text-sm font-semibold ${info.color}`}>{info.label}</span>
+                  </div>
+                  <p className="text-sm text-slate-500 mb-3">{info.description}</p>
+                  <ul className="space-y-1">
+                    {fields.map(f => (
+                      <li key={f.key} className="text-sm text-slate-600 flex items-center gap-1.5">
+                        <span className="w-1 h-1 rounded-full bg-slate-400 flex-shrink-0" />
+                        {f.label}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Template download links */}
+          <p className="text-sm text-slate-500">
+            Não tem um CSV?{" "}
+            Baixe um template:{" "}
+            {[
+              { label: "Genérico", sector: "generico" },
+              { label: "Mineração", sector: "mineracao" },
+            ].map(({ label, sector }, i) => (
+              <span key={sector}>
+                {i > 0 && " "}
+                <a
+                  href={`/api/retain/templates/${sector}`}
+                  download
+                  className="text-sm text-[#293b83] font-medium hover:underline"
+                >
+                  {label}
+                </a>
+                {i < 1 && " "}
+              </span>
+            ))}
+          </p>
+
+          {/* Drop zone */}
+          <div
+            className="bg-white rounded-xl border-2 border-dashed border-slate-200 hover:border-[#293b83] transition-colors cursor-pointer p-10 text-center"
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={handleDrop}
+            onClick={() => fileRef.current?.click()}
+          >
+            <input ref={fileRef} type="file" accept=".csv,.xlsx" className="hidden" onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
+            <svg className="w-10 h-10 text-slate-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+            <p className="text-slate-700 font-medium">Arraste seu arquivo CSV aqui</p>
+            <p className="text-sm text-slate-400 mt-1">ou clique para selecionar — máx. 50MB</p>
+            <p className="text-xs text-slate-300 mt-1">Formatos aceitos: .csv com separador vírgula ou ponto-e-vírgula</p>
+          </div>
         </div>
       )}
 

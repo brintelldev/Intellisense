@@ -2,6 +2,8 @@ import { Router } from "express";
 import multer from "multer";
 import os from "os";
 import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import Papa from "papaparse";
 import { db } from "../../db.js";
 import { eq, and, desc, asc, ilike, sql, inArray, SQL } from "drizzle-orm";
@@ -16,6 +18,10 @@ import { suggestMapping } from "../../engine/column-mapper.js";
 import { readCsvFile } from "../../lib/csv-reader.js";
 import { parseNumber } from "../../lib/value-normalizer.js";
 import { formatTimeAgo } from "../../lib/time-utils.js";
+import { computePareto } from "../../lib/pareto.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export const obtainRouter = Router();
 const upload = multer({ storage: multer.diskStorage({ destination: os.tmpdir() }), limits: { fileSize: 50 * 1024 * 1024 } });
@@ -161,6 +167,119 @@ obtainRouter.get("/dashboard", async (req, res) => {
         : "Mova leads qualificados para o estágio de Proposta para acelerar fechamentos",
     };
 
+    // ── priorityImpact: Pareto comparison universe vs. priority subset ──
+    let priorityImpact: {
+      universe: { leads: number; totalLtv: number; avgConversionProb: number };
+      priority: { leads: number; totalLtv: number; ltvShare: number; avgConversionProb: number; thresholdScore: number | null };
+      insight: string;
+    } | null = null;
+
+    const allScoredRows = await db.select({
+      ltvPrediction: obtainScores.ltvPrediction,
+      conversionProbability: obtainScores.conversionProbability,
+      score: obtainScores.score,
+    }).from(obtainScores)
+      .where(eq(obtainScores.tenantId, tenantId));
+
+    if (allScoredRows.length >= 5) {
+      const universeTotalLtv = allScoredRows.reduce((s, r) => s + (r.ltvPrediction ?? 0), 0);
+      const universeAvgConv = allScoredRows.length > 0
+        ? allScoredRows.reduce((s, r) => s + (r.conversionProbability ?? 0), 0) / allScoredRows.length
+        : 0;
+
+      const pareto = computePareto(allScoredRows, r => r.ltvPrediction ?? 0, 0.7);
+
+      if (pareto) {
+        const sorted = [...allScoredRows].sort((a, b) => (b.ltvPrediction ?? 0) - (a.ltvPrediction ?? 0));
+        const topSlice = sorted.slice(0, pareto.topN);
+        const priorityTotalLtv = topSlice.reduce((s, r) => s + (r.ltvPrediction ?? 0), 0);
+        const priorityAvgConv = topSlice.length > 0
+          ? topSlice.reduce((s, r) => s + (r.conversionProbability ?? 0), 0) / topSlice.length
+          : 0;
+        const thresholdScore = topSlice[topSlice.length - 1]?.score ?? null;
+        const ltvShare = universeTotalLtv > 0 ? Math.round((priorityTotalLtv / universeTotalLtv) * 100) : 0;
+        const ltvFmt = (v: number) => v >= 1_000_000 ? `R$${(v / 1_000_000).toFixed(1)}M` : `R$${Math.round(v / 1_000)}K`;
+
+        priorityImpact = {
+          universe: {
+            leads: allScoredRows.length,
+            totalLtv: Math.round(universeTotalLtv),
+            avgConversionProb: Math.round(universeAvgConv * 100) / 100,
+          },
+          priority: {
+            leads: pareto.topN,
+            totalLtv: Math.round(priorityTotalLtv),
+            ltvShare,
+            avgConversionProb: Math.round(priorityAvgConv * 100) / 100,
+            thresholdScore,
+          },
+          insight: `Top ${pareto.topN} leads (${pareto.topPct}%) concentram ${ltvShare}% do potencial — ${ltvFmt(priorityTotalLtv)} de ${ltvFmt(universeTotalLtv)} total`,
+        };
+      }
+    }
+
+    // ── executiveInsights for dashboard (compact strip, no mapping/readiness context) — v2 ──
+    const [dashHotRows, dashWarmRow, dashTopSourceRow] = await Promise.all([
+      db.select({ count: sql<number>`count(*)::int` })
+        .from(obtainScores)
+        .where(and(eq(obtainScores.tenantId, tenantId), eq(obtainScores.riskTier, "hot"))),
+      db.select({ count: sql<number>`count(*)::int` })
+        .from(obtainScores)
+        .where(and(eq(obtainScores.tenantId, tenantId), eq(obtainScores.riskTier, "warm"))),
+      db.select({
+        source: leads.source,
+        avgLtv: sql<number>`coalesce(avg(${obtainScores.ltvPrediction}), 0)::real`,
+        avgConv: sql<number>`coalesce(avg(${obtainScores.conversionProbability}), 0)::real`,
+        count: sql<number>`count(*)::int`,
+      }).from(leads)
+        .innerJoin(obtainScores, eq(obtainScores.leadId, leads.id))
+        .where(and(eq(leads.tenantId, tenantId), eq(obtainScores.riskTier, "hot")))
+        .groupBy(leads.source)
+        .orderBy(sql`avg(${obtainScores.ltvPrediction}) DESC`)
+        .limit(1),
+    ]);
+
+    const DASH_CHANNEL_LABELS: Record<string, string> = {
+      referral: "Indicação", event: "Feira/Evento", paid_social: "LinkedIn Ads",
+      paid_search: "Google Ads", outbound: "Outbound", organic: "Orgânico/SEO",
+      email: "Email Marketing", csv: "CSV", manual: "Manual", other: "Outros",
+    };
+    const dashHotCount = dashHotRows[0]?.count ?? 0;
+    const dashWarmCount = dashWarmRow[0]?.count ?? 0;
+    const totalLtvAll = Number(ltvRow?.totalLtv ?? 0);
+    const fmtLtv = (v: number) => v >= 1_000_000 ? `R$${(v / 1_000_000).toFixed(1)}M` : `R$${Math.round(v / 1_000)}K`;
+
+    const dashExecutiveInsights: string[] = [];
+    if (dashHotCount + dashWarmCount > 0) {
+      dashExecutiveInsights.push(
+        `${dashHotCount + dashWarmCount} leads prioritários — ${dashHotCount} hot e ${dashWarmCount} warm com ação recomendada.`
+      );
+    }
+    if (priorityImpact) {
+      dashExecutiveInsights.push(
+        `Top ${priorityImpact.priority.leads} leads (${Math.round(priorityImpact.priority.leads / priorityImpact.universe.leads * 100)}%) concentram ${priorityImpact.priority.ltvShare}% do potencial — ${fmtLtv(priorityImpact.priority.totalLtv)} dos ${fmtLtv(priorityImpact.universe.totalLtv)} totais.`
+      );
+    }
+    if (dashTopSourceRow[0]) {
+      const ch = DASH_CHANNEL_LABELS[dashTopSourceRow[0].source ?? "other"] ?? dashTopSourceRow[0].source ?? "canal";
+      dashExecutiveInsights.push(
+        `Canal destaque: ${ch} — ${dashTopSourceRow[0].count} leads hot, LTV médio ${fmtLtv(dashTopSourceRow[0].avgLtv)}, ${Math.round((dashTopSourceRow[0].avgConv ?? 0) * 100)}% de conversão.`
+      );
+    }
+    if (totalLtvAll > 0) {
+      dashExecutiveInsights.push(`Pipeline total: ${fmtLtv(totalLtvAll)} em LTV identificado.`);
+    }
+
+    const dashPriorityConcentration = priorityImpact
+      ? {
+          topN: priorityImpact.priority.leads,
+          topLeadsPct: Math.round((priorityImpact.priority.leads / priorityImpact.universe.leads) * 100),
+          ltvPct: priorityImpact.priority.ltvShare,
+          totalLeads: priorityImpact.universe.leads,
+          totalLtv: priorityImpact.universe.totalLtv,
+        }
+      : null;
+
     res.json({
       kpis: {
         totalLeads: leadCount.count,
@@ -178,6 +297,9 @@ obtainRouter.get("/dashboard", async (req, res) => {
       },
       pipelineHealth,
       pipelineProjection,
+      priorityImpact,
+      executiveInsights: dashExecutiveInsights,
+      priorityConcentration: dashPriorityConcentration,
     });
   } catch (err) {
     console.error("Obtain dashboard error:", err);
@@ -265,12 +387,44 @@ obtainRouter.get("/lead-priorities", async (req, res) => {
       leadCount: sourceCounts[0].count,
     } : null;
 
+    // Promising channels: top 3 by avg(score * ltvPrediction) among hot/warm
+    const channelRows = await db.select({
+      source: leads.source,
+      avgValue: sql<number>`avg(${obtainScores.score}::real * ${obtainScores.ltvPrediction})`,
+      count: sql<number>`count(*)::int`,
+    }).from(leads)
+      .innerJoin(obtainScores, eq(obtainScores.leadId, leads.id))
+      .where(and(
+        eq(leads.tenantId, tenantId),
+        sql`${obtainScores.riskTier} IN ('hot', 'warm')`,
+      ))
+      .groupBy(leads.source)
+      .orderBy(sql`avg(${obtainScores.score}::real * ${obtainScores.ltvPrediction}) DESC`)
+      .limit(3);
+
+    const promisingChannels = channelRows.map(r => ({
+      name: CHANNEL_LABELS[r.source ?? "other"] ?? (r.source ?? "Outros"),
+      count: r.count,
+    }));
+
     const priorities = topRows.map(r => {
       const shapValues = (r.score.shapValues as any[]) ?? [];
       const topFactor = shapValues.find((s: any) => s.direction === "positive") ?? shapValues[0];
       const daysSinceCreated = r.lead.createdAt
         ? Math.floor((Date.now() - new Date(r.lead.createdAt).getTime()) / (1000 * 60 * 60 * 24))
         : 0;
+      const daysWithoutAction = r.lead.updatedAt
+        ? Math.floor((Date.now() - new Date(r.lead.updatedAt).getTime()) / (1000 * 60 * 60 * 24))
+        : daysSinceCreated;
+
+      const estimatedImpact = Math.round((r.score.ltvPrediction ?? 0) * (r.score.conversionProbability ?? 0));
+      const recommendedToday = r.score.riskTier === "hot" && daysWithoutAction <= 2;
+
+      // Build human-readable priority reason
+      const tierLabel = r.score.riskTier === "hot" ? "Lead hot" : "Lead warm";
+      const factorPart = topFactor ? ` · ${topFactor.label}` : "";
+      const actionPart = daysWithoutAction > 0 ? ` · ${daysWithoutAction}d sem contato` : " · contato recente";
+      const priorityReason = `${tierLabel}${factorPart}${actionPart}`;
 
       return {
         leadId: r.lead.id,
@@ -286,8 +440,15 @@ obtainRouter.get("/lead-priorities", async (req, res) => {
         recommendedAction: r.score.recommendedAction ?? "",
         source: r.lead.source,
         daysInFunnel: daysSinceCreated,
+        daysWithoutAction,
+        estimatedImpact,
+        recommendedToday,
+        priorityReason,
       };
     });
+
+    const totalPotentialRevenue = priorities.reduce((s, p) => s + p.estimatedImpact, 0);
+    const hotWithoutRecentAction = priorities.filter(p => p.scoreTier === "hot" && p.daysWithoutAction > 2).length;
 
     res.json({
       priorities,
@@ -295,6 +456,9 @@ obtainRouter.get("/lead-priorities", async (req, res) => {
       hotCount: hotCount?.count ?? 0,
       warmCount: warmCount?.count ?? 0,
       topSource,
+      totalPotentialRevenue,
+      hotWithoutRecentAction,
+      promisingChannels,
     });
   } catch (err) {
     console.error("Obtain lead priorities error:", err);
@@ -763,6 +927,30 @@ obtainRouter.post("/lead-actions", async (req, res) => {
   }
 });
 
+// ─── GET /templates/:sector ──────────────────────────────────────────────────
+// Serves sample CSV templates for onboarding. Sector: mineracao | construcao | generico
+const TEMPLATE_FILES: Record<string, string> = {
+  mineracao:  "mineracao_clientes.csv",
+  construcao: "construcao_leads.csv",
+  generico:   "generico_leads.csv",
+};
+
+obtainRouter.get("/templates/:sector", (req, res) => {
+  const sector = req.params.sector as string;
+  const filename = TEMPLATE_FILES[sector] ?? TEMPLATE_FILES["generico"];
+  // __dirname = server/src/routes/obtain → ../../seed = server/src/seed
+  const templateDir = path.resolve(__dirname, "../../seed/csv-templates");
+  const filePath = path.join(templateDir, filename);
+
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: "Template não encontrado" });
+  }
+
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.sendFile(filePath);
+});
+
 // ─── GET /uploads ────────────────────────────────────────────────────────────
 obtainRouter.get("/uploads", async (req, res) => {
   try {
@@ -989,8 +1177,8 @@ obtainRouter.post("/uploads", upload.single("file"), async (req, res) => {
     await generateIcpClusters(tenantId);
     const { alertsGenerated } = await generateObtainAlerts(tenantId);
 
-    // Intelligence summary
-    const [hotLeadsRows, warmLeadsRows, allLtvRow] = await Promise.all([
+    // Intelligence summary — expanded for commercial attractiveness
+    const [hotLeadsRows, warmLeadsRows, allLtvRow, allHotWarmRows] = await Promise.all([
       db.select({ lead: leads, score: obtainScores })
         .from(leads).innerJoin(obtainScores, eq(obtainScores.leadId, leads.id))
         .where(and(eq(leads.tenantId, tenantId), eq(obtainScores.riskTier, "hot")))
@@ -1000,18 +1188,24 @@ obtainRouter.post("/uploads", upload.single("file"), async (req, res) => {
         .where(and(eq(obtainScores.tenantId, tenantId), eq(obtainScores.riskTier, "warm"))),
       db.select({ totalLtv: sql<number>`coalesce(sum(${obtainScores.ltvPrediction}), 0)::real` })
         .from(obtainScores).where(eq(obtainScores.tenantId, tenantId)),
+      // All hot leads for Pareto + bestProfile
+      db.select({ lead: leads, score: obtainScores })
+        .from(leads).innerJoin(obtainScores, eq(obtainScores.leadId, leads.id))
+        .where(and(eq(leads.tenantId, tenantId), sql`${obtainScores.riskTier} IN ('hot', 'warm')`))
+        .orderBy(desc(obtainScores.score)),
     ]);
 
     const topSourceRows = await db.select({
       source: leads.source,
       avgLtv: sql<number>`coalesce(avg(${obtainScores.ltvPrediction}), 0)::real`,
+      avgConv: sql<number>`coalesce(avg(${obtainScores.conversionProbability}), 0)::real`,
       count: sql<number>`count(*)::int`,
     }).from(leads)
       .innerJoin(obtainScores, eq(obtainScores.leadId, leads.id))
       .where(and(eq(leads.tenantId, tenantId), eq(obtainScores.riskTier, "hot")))
       .groupBy(leads.source)
       .orderBy(sql`avg(${obtainScores.ltvPrediction}) DESC`)
-      .limit(1);
+      .limit(3);
 
     const CHANNEL_LABELS_UPLOAD: Record<string, string> = {
       referral: "Indicação de Clientes", event: "Feira/Evento",
@@ -1020,10 +1214,123 @@ obtainRouter.post("/uploads", upload.single("file"), async (req, res) => {
       email: "Email Marketing", csv: "CSV Import", manual: "Manual", other: "Outros",
     };
 
+    // ── priorityConcentration (Pareto) ──
+    const paretoResult = computePareto(
+      allHotWarmRows,
+      r => r.score.ltvPrediction ?? 0,
+      0.7,
+    );
+    const totalLtv = allLtvRow[0]?.totalLtv ?? 0;
+    const priorityConcentration = paretoResult
+      ? {
+          topN: paretoResult.topN,
+          topLeadsPct: paretoResult.topPct,
+          ltvPct: paretoResult.valuePct,
+          totalLeads: allHotWarmRows.length,
+          totalLtv: Math.round(totalLtv),
+        }
+      : null;
+
+    // ── bestProfile: industry+size combo most frequent in hot leads ──
+    let bestProfile: { industry: string | null; companySize: string | null; matchedCluster: string | null; adherencePct: number; leadCount: number } | null = null;
+    if (allHotWarmRows.length > 0) {
+      const profileMap = new Map<string, { industry: string | null; companySize: string | null; count: number }>();
+      for (const r of allHotWarmRows) {
+        const key = `${r.lead.industry ?? ""}|${r.lead.companySize ?? ""}`;
+        const existing = profileMap.get(key);
+        if (existing) existing.count++;
+        else profileMap.set(key, { industry: r.lead.industry ?? null, companySize: r.lead.companySize ?? null, count: 1 });
+      }
+      const topEntry = [...profileMap.values()].sort((a, b) => b.count - a.count)[0];
+
+      // Fuzzy cluster match
+      let matchedCluster: string | null = null;
+      if (topEntry.industry) {
+        const [cluster] = await db.select()
+          .from(obtainIcpClusters)
+          .where(and(
+            eq(obtainIcpClusters.tenantId, tenantId),
+            sql`lower(${obtainIcpClusters.clusterName}) like lower(${"%" + topEntry.industry + "%"})`,
+          ))
+          .limit(1);
+        if (cluster) matchedCluster = cluster.clusterName;
+      }
+
+      bestProfile = {
+        industry: topEntry.industry,
+        companySize: topEntry.companySize,
+        matchedCluster,
+        adherencePct: Math.round((topEntry.count / allHotWarmRows.length) * 100),
+        leadCount: topEntry.count,
+      };
+    }
+
+    // ── dataReadinessSummary: coverage based on mapping ──
+    const SCORING_FIELDS = ["name", "company", "industry", "companySize", "source"];
+    const ICP_FIELDS = ["industry", "companySize"];
+    const LTV_FIELDS = ["companySize", "industry"];
+    const CADENCE_FIELDS = ["source", "industry"];
+    const CONTACT_FIELDS = ["email", "phone"];
+    const mappedKeys = new Set(Object.keys(mapping).filter(k => mapping[k]));
+    const allSystemKeys = ["id", "name", "company", "industry", "companySize", "city", "state", "email", "phone", "source", "campaign"];
+    const coveragePct = Math.round((mappedKeys.size / allSystemKeys.length) * 100);
+    const readyFor: string[] = [];
+    const missingFor: string[] = [];
+    if (SCORING_FIELDS.filter(f => mappedKeys.has(f)).length >= 2) readyFor.push("Score");
+    else missingFor.push("Score");
+    if (ICP_FIELDS.every(f => mappedKeys.has(f))) readyFor.push("ICP");
+    else missingFor.push("ICP");
+    if (LTV_FIELDS.filter(f => mappedKeys.has(f)).length >= 1) readyFor.push("LTV aproximado");
+    else missingFor.push("LTV");
+    if (CADENCE_FIELDS.filter(f => mappedKeys.has(f)).length >= 1) readyFor.push("Cadência");
+    else missingFor.push("Cadência");
+    if (CONTACT_FIELDS.some(f => mappedKeys.has(f))) readyFor.push("Contato");
+    const dataReadinessSummary = { coveragePct, readyFor, missing: missingFor };
+
+    // ── executiveInsights (template-based PT-BR bullets) ──
+    const hotCount = hotLeadsRows.length;
+    const warmCount = warmLeadsRows[0]?.count ?? 0;
+    const totalLtvFormatted = totalLtv >= 1_000_000
+      ? `R$${(totalLtv / 1_000_000).toFixed(1)}M`
+      : `R$${Math.round(totalLtv / 1_000)}K`;
+    const executiveInsights: string[] = [];
+
+    if (hotCount + warmCount > 0) {
+      executiveInsights.push(
+        `${hotCount + warmCount} leads prioritários identificados — ${hotCount} hot e ${warmCount} warm prontos para ação imediata.`
+      );
+    }
+    if (priorityConcentration && priorityConcentration.ltvPct >= 50) {
+      executiveInsights.push(
+        `Os top ${priorityConcentration.topN} leads (${priorityConcentration.topLeadsPct}% do pipeline) concentram ${priorityConcentration.ltvPct}% do potencial de receita — ${totalLtvFormatted} total.`
+      );
+    } else if (totalLtv > 0) {
+      executiveInsights.push(`Pipeline total estimado: ${totalLtvFormatted} em LTV identificado.`);
+    }
+    if (topSourceRows[0]) {
+      const bestCh = CHANNEL_LABELS_UPLOAD[topSourceRows[0].source ?? "other"] ?? topSourceRows[0].source ?? "canal";
+      const convPct = Math.round((topSourceRows[0].avgConv ?? 0) * 100);
+      executiveInsights.push(
+        `Canal de maior desempenho: ${bestCh} — ${topSourceRows[0].count} leads hot com LTV médio ${topSourceRows[0].avgLtv >= 1_000_000 ? `R$${(topSourceRows[0].avgLtv / 1_000_000).toFixed(1)}M` : `R$${Math.round(topSourceRows[0].avgLtv / 1_000)}K`}${convPct > 0 ? ` e ${convPct}% de prob. de conversão` : ""}.`
+      );
+    }
+    if (bestProfile && bestProfile.adherencePct >= 30) {
+      const sizeLabel: Record<string, string> = { micro: "micro", small: "pequeno", medium: "médio", large: "grande", enterprise: "enterprise" };
+      const sizePart = bestProfile.companySize ? `, porte ${sizeLabel[bestProfile.companySize] ?? bestProfile.companySize}` : "";
+      executiveInsights.push(
+        `Perfil ICP predominante: ${bestProfile.industry ?? "indefinido"}${sizePart} — representa ${bestProfile.adherencePct}% dos leads qualificados.`
+      );
+    }
+    if (dataReadinessSummary.coveragePct < 60) {
+      executiveInsights.push(
+        `Cobertura de diagnóstico em ${dataReadinessSummary.coveragePct}% — adicione ${missingFor.join(", ")} para análise completa.`
+      );
+    }
+
     const intelligenceSummary = {
-      hotLeadsCount: hotLeadsRows.length,
-      warmLeadsCount: warmLeadsRows[0]?.count ?? 0,
-      totalLtvPipeline: Math.round(allLtvRow[0]?.totalLtv ?? 0),
+      hotLeadsCount: hotCount,
+      warmLeadsCount: warmCount,
+      totalLtvPipeline: Math.round(totalLtv),
       bestChannel: topSourceRows[0]
         ? {
             name: CHANNEL_LABELS_UPLOAD[topSourceRows[0].source ?? "other"] ?? topSourceRows[0].source,
@@ -1040,6 +1347,10 @@ obtainRouter.post("/uploads", upload.single("file"), async (req, res) => {
         ltvPrediction: r.score.ltvPrediction ?? 0,
         recommendedAction: r.score.recommendedAction ?? "",
       })),
+      executiveInsights,
+      priorityConcentration,
+      bestProfile,
+      dataReadinessSummary,
     };
 
     const [done] = await db.update(obtainUploads)
@@ -1368,7 +1679,7 @@ obtainRouter.get("/data-freshness", async (req, res) => {
     const [lastUpload] = await db.select()
       .from(obtainUploads)
       .where(and(eq(obtainUploads.tenantId, tenantId), eq(obtainUploads.status, "completed")))
-      .orderBy(desc(obtainUploads.processedAt))
+      .orderBy(sql`${obtainUploads.processedAt} DESC NULLS LAST`)
       .limit(1);
 
     const [countRow] = await db.select({ count: sql<number>`count(*)::int` })

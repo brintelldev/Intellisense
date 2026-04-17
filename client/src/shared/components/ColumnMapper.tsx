@@ -20,6 +20,8 @@ interface ColumnMapperProps {
   systemFields: SystemField[];
   onMappingChange?: (mapping: Record<string, string>) => void;
   serverSuggestions?: ServerSuggestion[];
+  /** Called whenever the coverage % changes; useful for parent to show a readiness banner */
+  onCoverageChange?: (pct: number) => void;
 }
 
 // Simple fuzzy match: returns true if col is a good match for label
@@ -81,7 +83,7 @@ function buildServerSuggestions(
   return result;
 }
 
-export function ColumnMapper({ csvColumns, systemFields, onMappingChange, serverSuggestions }: ColumnMapperProps) {
+export function ColumnMapper({ csvColumns, systemFields, onMappingChange, serverSuggestions, onCoverageChange }: ColumnMapperProps) {
   const localSuggestions = useMemo(() => buildSuggestions(csvColumns, systemFields), [csvColumns, systemFields]);
   const initialMapping = useMemo(() => {
     if (serverSuggestions && serverSuggestions.length > 0) {
@@ -118,6 +120,9 @@ export function ColumnMapper({ csvColumns, systemFields, onMappingChange, server
     if (!csvColumn) delete newMapping[fieldKey];
     setMapping(newMapping);
     onMappingChange?.(newMapping);
+    const newMappedCount = Object.values(newMapping).filter(Boolean).length;
+    const newPct = Math.round((newMappedCount / systemFields.length) * 100);
+    onCoverageChange?.(newPct);
   };
 
   const mappedColumns = new Set(Object.values(mapping).filter(Boolean));
@@ -125,7 +130,13 @@ export function ColumnMapper({ csvColumns, systemFields, onMappingChange, server
 
   const mappedCount = Object.values(mapping).filter(Boolean).length;
   const pct = Math.round((mappedCount / systemFields.length) * 100);
-  const precision = pct >= 80 ? "Alta" : pct >= 50 ? "Média" : "Baixa";
+
+  // Business-oriented precision labels (per PLAN_codex item 5.4)
+  const precision = pct >= 80
+    ? "Diagnóstico completo: score + ICP + LTV + cadência"
+    : pct >= 50
+    ? "Diagnóstico parcial: score + ICP, LTV aproximado"
+    : "Diagnóstico básico: contagem + alertas, score aproximado";
   const precisionColor = pct >= 80 ? "#10B981" : pct >= 50 ? "#f59e0b" : "#ef4444";
 
   return (

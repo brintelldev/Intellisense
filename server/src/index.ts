@@ -1,3 +1,4 @@
+// IntelliSense Server v2.2
 import express from "express";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";

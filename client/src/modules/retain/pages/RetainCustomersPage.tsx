@@ -45,7 +45,7 @@ const columns: ColumnDef<Customer>[] = [
   },
   {
     key: "tenureDays", header: "Parceria", sortable: true, width: "8%",
-    render: (r) => <span className="text-sm text-slate-600">{Math.round(r.tenureDays / 30)}m</span>,
+    render: (r) => <span className="text-sm text-slate-600">{r.tenureDays != null ? `${Math.round(r.tenureDays / 30)}m` : "—"}</span>,
   },
   {
     key: "healthScore", header: "Health Score", sortable: true, width: "14%",
