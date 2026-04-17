@@ -45,7 +45,7 @@ function NavItem({ icon: Icon, label, active, collapsed, accentColor, onClick }:
       className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all ${
         active
           ? "bg-white/10 text-white"
-          : "text-slate-400 hover:bg-white/5 hover:text-white"
+          : "text-white/70 hover:bg-white/5 hover:text-white"
       }`}
       style={active ? { borderLeft: `3px solid ${accentColor}` } : { borderLeft: "3px solid transparent" }}
     >
@@ -175,7 +175,7 @@ export default function Sidebar() {
         />
         <button
           onClick={handleLogout}
-          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-400 hover:bg-white/5 hover:text-red-400 transition-all"
+          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-white/70 hover:bg-white/5 hover:text-red-400 transition-all"
           title={collapsed ? "Sair" : undefined}
         >
           <LogOut className="w-4 h-4 flex-shrink-0" />

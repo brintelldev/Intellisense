@@ -15,8 +15,19 @@ export function LeadQualityAreaChart({ data }: Props) {
   if (data.length === 0) return null;
 
   return (
-    <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-100">
-      <h3 className="font-semibold text-slate-800 mb-4">Qualidade dos Leads por Mês</h3>
+    <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+      <div className="bg-gradient-to-r from-[#10B981]/5 to-transparent border-b border-slate-100 px-5 py-4 flex items-center gap-2">
+        <div className="w-8 h-8 rounded-lg bg-[#10B981]/10 flex items-center justify-center flex-shrink-0">
+          <svg className="w-4 h-4 text-[#10B981]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+          </svg>
+        </div>
+        <div>
+          <h3 className="text-sm font-semibold text-slate-800">Qualidade dos Leads por Mês</h3>
+          <p className="text-xs text-slate-500">Evolução de leads hot, warm e cold</p>
+        </div>
+      </div>
+      <div className="p-5">
       <ResponsiveContainer width="100%" height={220}>
         <AreaChart data={data}>
           <defs>
@@ -39,6 +50,7 @@ export function LeadQualityAreaChart({ data }: Props) {
           <Area type="monotone" dataKey="cold" name="Cold" stroke="#94a3b8" fill="none" strokeWidth={1.5} strokeDasharray="4 4" />
         </AreaChart>
       </ResponsiveContainer>
+      </div>
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { useRetainVoc } from "../../../shared/hooks/useRetain";
 import { LoadingState } from "../../../shared/components/LoadingState";
+import { VerbatimCarousel } from "../components/VerbatimCarousel";
 import { useLocation } from "wouter";
 
 function EmptyVoc() {
@@ -69,7 +70,7 @@ export default function RetainVozDoClientePage() {
 
       {!isLoading && !error && data && data.npsDistribution.total > 0 && (
         <>
-          {/* ── Row 1: NPS big number + distribution ──────────────────────────── */}
+          {/* ── Row 1: NPS score + distribution + verbatims carousel ─────────── */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             {/* NPS Score card */}
             <div className="bg-white rounded-xl p-6 border border-slate-100 shadow-sm flex flex-col items-center justify-center gap-2">
@@ -82,13 +83,24 @@ export default function RetainVozDoClientePage() {
             </div>
 
             {/* NPS Distribution */}
-            <div className="lg:col-span-2 bg-white rounded-xl p-6 border border-slate-100 shadow-sm">
-              <p className="text-sm font-semibold text-slate-700 mb-4">Distribuição NPS</p>
+            <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+              <div className="bg-gradient-to-r from-[#293b83]/5 to-transparent border-b border-slate-100 px-5 py-4 flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-[#293b83]/10 flex items-center justify-center flex-shrink-0">
+                  <svg className="w-4 h-4 text-[#293b83]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">Distribuição NPS</p>
+                  <p className="text-xs text-slate-500">Promotores, neutros e detratores</p>
+                </div>
+              </div>
+              <div className="p-6">
               <div className="space-y-3">
                 {/* Promoters */}
                 <div>
                   <div className="flex justify-between text-xs text-slate-500 mb-1">
-                    <span>Promotores <span className="text-slate-400">(NPS ≥ 70)</span></span>
+                    <span>Promotores <span className="text-slate-400">(≥ 70)</span></span>
                     <span className="font-semibold text-green-600">{data.npsDistribution.promoters} ({data.npsDistribution.promotersPct}%)</span>
                   </div>
                   <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
@@ -116,127 +128,164 @@ export default function RetainVozDoClientePage() {
                   </div>
                 </div>
               </div>
+              </div>
             </div>
+
+            {/* Verbatims carousel */}
+            {data.verbatims && data.verbatims.length > 0
+              ? <VerbatimCarousel verbatims={data.verbatims} />
+              : (
+                <div className="bg-slate-50 rounded-xl p-5 border border-slate-200 flex flex-col items-center justify-center text-center gap-2">
+                  <svg className="w-8 h-8 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                  </svg>
+                  <p className="text-sm text-slate-500 font-medium">Sem verbatims ainda</p>
+                  <p className="text-xs text-slate-400 max-w-xs">
+                    Adicione uma coluna "Comentário NPS" no seu CSV para ver a voz literal dos clientes aqui.
+                  </p>
+                </div>
+              )
+            }
           </div>
 
           {/* ── Row 2: Detractors by revenue ──────────────────────────────────── */}
           {data.detractorsByRevenue.length > 0 && (
             <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+              {/* Header */}
               <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-                <div>
-                  <h3 className="font-semibold text-slate-800">Detratores por Receita</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">Clientes insatisfeitos ordenados pelo impacto financeiro</p>
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center flex-shrink-0">
+                    <svg className="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-slate-800">Detratores por Receita</h3>
+                    <p className="text-xs text-slate-500">
+                      {data.detractorsByRevenue.length} clientes insatisfeitos · ordenados pelo impacto financeiro
+                    </p>
+                  </div>
                 </div>
                 {data.totalDetractorRevenue > 0 && (
-                  <div className="bg-red-50 border border-red-100 rounded-lg px-3 py-2 text-right">
-                    <p className="text-xs text-red-500 font-medium">Receita em risco</p>
-                    <p className="text-lg font-bold text-red-600">
+                  <div className="bg-red-50 border border-red-100 rounded-lg px-4 py-2 text-right flex-shrink-0">
+                    <p className="text-[11px] text-red-400 font-medium uppercase tracking-wide">Receita em risco</p>
+                    <p className="text-xl font-bold text-red-600 tabular-nums">
                       {data.totalDetractorRevenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                     </p>
                   </div>
                 )}
               </div>
-              <table className="w-full text-sm">
-                <thead className="bg-slate-50">
-                  <tr>
-                    {["Empresa", "Segmento", "Receita Mensal", "Satisfação", "Ação"].map(h => (
-                      <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50">
-                  {data.detractorsByRevenue.map((c: any) => (
-                    <tr key={c.id} className="hover:bg-slate-50/50">
-                      <td className="px-4 py-3">
-                        <p className="font-semibold text-slate-800">{c.name}</p>
-                        {c.email && <p className="text-xs text-slate-400">{c.email}</p>}
-                      </td>
-                      <td className="px-4 py-3 text-slate-500 text-xs">{c.segment ?? "—"}</td>
-                      <td className="px-4 py-3 font-semibold text-slate-800 tabular-nums">
-                        {c.revenue != null
-                          ? c.revenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
-                          : "—"}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="inline-flex items-center gap-1 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">
-                          {c.satisfactionLabel ?? `${Math.round(c.satisfaction ?? 0)}`}
+
+              {/* Column labels */}
+              <div className="grid grid-cols-12 gap-2 px-5 py-2 bg-slate-50 border-b border-slate-100 text-[11px] font-semibold text-slate-400 uppercase tracking-wide">
+                <span className="col-span-4">Empresa</span>
+                <span className="col-span-2">Segmento</span>
+                <span className="col-span-2 text-right">Receita/mês</span>
+                <span className="col-span-2 text-center">Satisfação</span>
+                <span className="col-span-2 text-right">Risco receita</span>
+              </div>
+
+              {/* Rows */}
+              <div className="divide-y divide-slate-50">
+                {data.detractorsByRevenue.map((c: any, i: number) => {
+                  const satScore = c.satisfaction ?? 0;
+                  const satColor = satScore < 25 ? "bg-red-100 text-red-700" : satScore < 40 ? "bg-orange-100 text-orange-700" : "bg-amber-100 text-amber-700";
+                  const revenueShare = data.totalDetractorRevenue > 0
+                    ? Math.round(((c.revenue ?? 0) / data.totalDetractorRevenue) * 100)
+                    : 0;
+
+                  return (
+                    <div
+                      key={c.id}
+                      className="grid grid-cols-12 gap-2 px-5 py-3.5 items-center hover:bg-slate-50/70 transition-colors"
+                    >
+                      {/* Company */}
+                      <div className="col-span-4 flex items-center gap-2.5 min-w-0">
+                        <div className="w-1 h-8 rounded-full bg-red-200 flex-shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-slate-800 truncate">{c.name}</p>
+                          {c.email && <p className="text-xs text-slate-400 truncate">{c.email}</p>}
+                        </div>
+                      </div>
+
+                      {/* Segment */}
+                      <div className="col-span-2">
+                        <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">
+                          {c.segment ?? "—"}
                         </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <a
-                          href={`/retain/customers`}
-                          className="text-xs text-[#293b83] hover:underline font-medium"
-                        >
-                          Ver cliente →
-                        </a>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      </div>
+
+                      {/* Revenue */}
+                      <div className="col-span-2 text-right">
+                        <p className="text-sm font-semibold text-slate-800 tabular-nums">
+                          {c.revenue != null
+                            ? c.revenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+                            : "—"}
+                        </p>
+                      </div>
+
+                      {/* Satisfaction */}
+                      <div className="col-span-2 flex justify-center">
+                        <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${satColor}`}>
+                          {c.satisfactionLabel ?? `${Math.round(satScore)}`}
+                        </span>
+                      </div>
+
+                      {/* Revenue share bar */}
+                      <div className="col-span-2 flex items-center gap-2 justify-end">
+                        <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden max-w-[60px]">
+                          <div className="h-full bg-red-400 rounded-full" style={{ width: `${revenueShare}%` }} />
+                        </div>
+                        <span className="text-xs font-medium text-slate-500 tabular-nums w-8 text-right">{revenueShare}%</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
 
-          {/* ── Row 3: Ticket themes + Verbatims ─────────────────────────────── */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Ticket themes */}
-            {data.ticketThemes.length > 0 && (
-              <div className="bg-white rounded-xl p-5 border border-slate-100 shadow-sm">
-                <h3 className="font-semibold text-slate-800 mb-4">Temas mais frequentes</h3>
-                <div className="space-y-3">
-                  {data.ticketThemes.map(({ theme, count }: { theme: string; count: number }, i: number) => {
-                    const max = data.ticketThemes[0].count;
-                    const pct = Math.round((count / max) * 100);
-                    return (
-                      <div key={theme}>
-                        <div className="flex justify-between text-sm mb-1">
-                          <span className="text-slate-700 font-medium">{theme}</span>
-                          <span className="text-slate-500 tabular-nums">{count}</span>
-                        </div>
-                        <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                          <div
-                            className="h-full rounded-full transition-all"
-                            style={{
-                              width: `${pct}%`,
-                              backgroundColor: ["#ef4444", "#f97316", "#f59e0b", "#84cc16", "#22c55e"][i % 5],
-                            }}
-                          />
-                        </div>
+          {/* ── Row 3: Ticket themes ─────────────────────────────────────────── */}
+          {data.ticketThemes.length > 0 && (
+            <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+              <div className="bg-gradient-to-r from-[#293b83]/5 to-transparent border-b border-slate-100 px-5 py-4 flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-[#293b83]/10 flex items-center justify-center flex-shrink-0">
+                  <svg className="w-4 h-4 text-[#293b83]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-800">Temas mais frequentes</h3>
+                  <p className="text-xs text-slate-500">Assuntos recorrentes nos feedbacks dos clientes</p>
+                </div>
+              </div>
+              <div className="p-5">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-x-8 gap-y-3">
+                {data.ticketThemes.map(({ theme, count }: { theme: string; count: number }, i: number) => {
+                  const max = data.ticketThemes[0].count;
+                  const pct = Math.round((count / max) * 100);
+                  return (
+                    <div key={theme}>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span className="text-slate-700 font-medium">{theme}</span>
+                        <span className="text-slate-500 tabular-nums">{count}</span>
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Verbatims */}
-            {data.verbatims && data.verbatims.length > 0 && (
-              <div className="bg-white rounded-xl p-5 border border-slate-100 shadow-sm">
-                <h3 className="font-semibold text-slate-800 mb-4">Voz real dos clientes</h3>
-                <div className="space-y-3">
-                  {data.verbatims.map((v: any, i: number) => (
-                    <div key={i} className="bg-slate-50 border border-slate-100 rounded-lg p-3">
-                      <p className="text-sm text-slate-700 italic">"{v.text}"</p>
-                      <p className="text-xs text-slate-400 mt-1.5">— {v.name}</p>
+                      <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all"
+                          style={{
+                            width: `${pct}%`,
+                            backgroundColor: ["#ef4444", "#f97316", "#f59e0b", "#84cc16", "#22c55e"][i % 5],
+                          }}
+                        />
+                      </div>
                     </div>
-                  ))}
-                </div>
+                  );
+                })}
               </div>
-            )}
-
-            {/* Fallback when no verbatims */}
-            {(!data.verbatims || data.verbatims.length === 0) && data.ticketThemes.length > 0 && (
-              <div className="bg-slate-50 rounded-xl p-5 border border-slate-200 flex flex-col items-center justify-center text-center gap-2">
-                <svg className="w-8 h-8 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-                </svg>
-                <p className="text-sm text-slate-500 font-medium">Sem verbatims ainda</p>
-                <p className="text-xs text-slate-400 max-w-xs">
-                  Adicione uma coluna "Comentário NPS" ou "Feedback Aberto" no seu CSV para ver a voz literal dos clientes aqui.
-                </p>
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* ── Row 4: Open actions for detractors ───────────────────────────── */}
           {data.detractorActions && data.detractorActions.length > 0 && (

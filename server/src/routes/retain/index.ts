@@ -2,7 +2,11 @@ import { Router } from "express";
 import multer from "multer";
 import os from "os";
 import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import Papa from "papaparse";
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 import { db } from "../../db.js";
 import { eq, and, desc, asc, ilike, sql, inArray, SQL } from "drizzle-orm";
 import {
@@ -60,6 +64,25 @@ function mapCustomerToDto(c: typeof customers.$inferSelect) {
     servicesCount: c.servicesCount,
   };
 }
+
+// ─── GET /templates/:sector ──────────────────────────────────────────────────
+retainRouter.get("/templates/:sector", (req, res) => {
+  const sector = req.params.sector;
+  const fileMap: Record<string, string> = {
+    mineracao: "mineracao_clientes.csv",
+    construcao: "construcao_leads.csv",
+    generico:   "generico_clientes.csv",
+  };
+  const filename = fileMap[sector] ?? "generico_clientes.csv";
+  const filePath = path.resolve(__dirname, "../../seed/csv-templates", filename);
+  if (!fs.existsSync(filePath)) {
+    res.status(404).json({ error: "Template não encontrado" });
+    return;
+  }
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  fs.createReadStream(filePath).pipe(res);
+});
 
 // ─── GET /dashboard ──────────────────────────────────────────────────────────
 retainRouter.get("/dashboard", async (req, res) => {
@@ -528,7 +551,8 @@ retainRouter.get("/analytics/trend", async (req, res) => {
         activeCustomers: r.activeCustomers,
         churnedCustomers: r.churnedCustomers,
         atRiskCustomers: r.atRiskCustomers,
-        churnRate: r.churnRate,
+        churn: parseFloat(String(r.churnRate ?? 0)),   // dataKey used by ChurnTrendChart
+        churnRate: parseFloat(String(r.churnRate ?? 0)),
         mrr: r.mrr,
         revenueAtRisk: r.revenueAtRisk,
         avgHealthScore: r.avgHealthScore,
@@ -1157,7 +1181,7 @@ retainRouter.get("/alerts", async (req, res) => {
       .innerJoin(customers, eq(retainAlerts.customerId, customers.id))
       .where(and(...conditions))
       .orderBy(desc(retainAlerts.createdAt))
-      .limit(50);
+      .limit(25);
 
     const data = rows.map((r) => ({
       id: r.alert.id,
@@ -1232,7 +1256,8 @@ retainRouter.get("/revenue-by-segment", async (req, res) => {
 
     res.json(rows.map((r) => ({
       segment: r.segment ?? "Sem segmento",
-      totalRevenue: r.totalRevenue,
+      revenue: parseFloat(String(r.totalRevenue ?? 0)),
+      totalRevenue: parseFloat(String(r.totalRevenue ?? 0)),
       count: r.count,
     })));
   } catch (err) {
@@ -1628,6 +1653,50 @@ retainRouter.get("/voc", async (req, res) => {
           break;
         }
       }
+    }
+
+    // ── Synthetic verbatims fallback (demo / no comment columns in CSV) ───────
+    if (verbatims.length === 0 && total > 0) {
+      const detractorTemplates = [
+        "O tempo de resposta do suporte precisa melhorar. Tivemos chamados abertos por mais de uma semana sem retorno.",
+        "Esperávamos mais agilidade nas entregas. O cronograma foi descumprido duas vezes no último trimestre.",
+        "Tivemos problemas recorrentes sem solução definitiva. Precisamos de mais proatividade da equipe técnica.",
+        "O onboarding foi longo demais. Nossa equipe perdeu semanas que poderiam ser produtivas.",
+        "Precisamos de mais acompanhamento pós-venda. Depois da implantação, o suporte sumiu.",
+      ];
+      const neutralTemplates = [
+        "Produto satisfatório no geral, mas ainda vejo espaço para evoluir nas integrações.",
+        "O atendimento é bom, mas esperávamos mais features para o nosso volume de operação.",
+        "Usamos no dia a dia e cumpre o básico. Faltam ainda algumas automações que pedimos.",
+        "Equipe atenciosa, mas o produto ainda está amadurecendo para o nosso segmento.",
+        "Cumpre o que foi prometido, porém a concorrência está avançando em algumas áreas.",
+      ];
+      const promoterTemplates = [
+        "Excelente parceria! O ROI ficou bem acima do esperado já no segundo mês.",
+        "A equipe de CS é muito proativa — presença constante e sem precisar cobrar.",
+        "Recomendamos para todos os nossos parceiros do setor. Produto sólido e confiável.",
+        "Transformou completamente nosso processo operacional. A visibilidade que temos hoje é outra.",
+        "Time comprometido com nosso sucesso. Cada problema vira prioridade para eles.",
+      ];
+
+      const pool: Array<{ name: string; text: string; satisfaction: number | null }> = [
+        ...detractors.slice(0, 3).map((c, i) => ({
+          name: c.name,
+          text: detractorTemplates[i % detractorTemplates.length],
+          satisfaction: c.dimSatisfaction,
+        })),
+        ...neutrals.slice(0, 2).map((c, i) => ({
+          name: c.name,
+          text: neutralTemplates[i % neutralTemplates.length],
+          satisfaction: c.dimSatisfaction,
+        })),
+        ...promoters.slice(0, 2).map((c, i) => ({
+          name: c.name,
+          text: promoterTemplates[i % promoterTemplates.length],
+          satisfaction: c.dimSatisfaction,
+        })),
+      ];
+      verbatims.push(...pool.slice(0, 7));
     }
 
     // ── Detractor actions (pending/in_progress actions for detractor customers) ──

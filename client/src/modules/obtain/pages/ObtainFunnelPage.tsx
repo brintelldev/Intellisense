@@ -56,15 +56,35 @@ export default function ObtainFunnelPage() {
       </div>
 
       {/* Funnel chart */}
-      <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-100">
-        <h3 className="font-semibold text-slate-800 mb-4">Visão do Funil Completo</h3>
-        <FunnelChart stages={funnelStages} />
+      <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+        <div className="bg-gradient-to-r from-[#10B981]/5 to-transparent border-b border-slate-100 px-5 py-4 flex items-center gap-2">
+          <div className="w-8 h-8 rounded-lg bg-[#10B981]/10 flex items-center justify-center flex-shrink-0">
+            <svg className="w-4 h-4 text-[#10B981]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
+            </svg>
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-slate-800">Visão do Funil Completo</h3>
+            <p className="text-xs text-slate-500">Conversão etapa a etapa no pipeline</p>
+          </div>
+        </div>
+        <div className="p-5">
+          <FunnelChart stages={funnelStages} />
+        </div>
       </div>
 
       {/* Stage metrics table */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-        <div className="p-4 border-b border-slate-100">
-          <h3 className="font-semibold text-slate-800">Métricas por Etapa</h3>
+        <div className="bg-gradient-to-r from-[#10B981]/5 to-transparent border-b border-slate-100 px-5 py-4 flex items-center gap-2">
+          <div className="w-8 h-8 rounded-lg bg-[#10B981]/10 flex items-center justify-center flex-shrink-0">
+            <svg className="w-4 h-4 text-[#10B981]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            </svg>
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-slate-800">Métricas por Etapa</h3>
+            <p className="text-xs text-slate-500">Tempo médio, drop-off e LTV em risco por etapa</p>
+          </div>
         </div>
         <table className="w-full">
           <thead>

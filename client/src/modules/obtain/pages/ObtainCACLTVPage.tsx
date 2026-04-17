@@ -72,8 +72,17 @@ export default function ObtainCACLTVPage() {
 
       {/* Campaigns table */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-        <div className="p-4 border-b border-slate-100">
-          <h3 className="font-semibold text-slate-800">Detalhamento por Campanha</h3>
+        <div className="bg-gradient-to-r from-[#10B981]/5 to-transparent border-b border-slate-100 px-5 py-4 flex items-center gap-2">
+          <div className="w-8 h-8 rounded-lg bg-[#10B981]/10 flex items-center justify-center flex-shrink-0">
+            <svg className="w-4 h-4 text-[#10B981]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
+            </svg>
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-slate-800">Detalhamento por Campanha</h3>
+            <p className="text-xs text-slate-500">CAC, LTV e ROI projetado por canal de aquisição</p>
+          </div>
         </div>
         <table className="w-full">
           <thead>

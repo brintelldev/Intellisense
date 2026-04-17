@@ -96,8 +96,19 @@ export default function RetainRevenueAnalyticsPage() {
       </div>
 
       <div className="grid grid-cols-2 gap-6">
-        <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-100">
-          <h2 className="text-sm font-semibold text-slate-700 mb-4">Waterfall de Receita</h2>
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+          <div className="bg-gradient-to-r from-[#293b83]/5 to-transparent border-b border-slate-100 px-5 py-4 flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-[#293b83]/10 flex items-center justify-center flex-shrink-0">
+              <svg className="w-4 h-4 text-[#293b83]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-slate-800">Waterfall de Receita</h2>
+              <p className="text-xs text-slate-500">Variação de MRR por categoria</p>
+            </div>
+          </div>
+          <div className="p-5">
           <ResponsiveContainer width="100%" height={320}>
             <BarChart data={waterfallData} margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
@@ -118,10 +129,22 @@ export default function RetainRevenueAnalyticsPage() {
               </Bar>
             </BarChart>
           </ResponsiveContainer>
+          </div>
         </div>
 
-        <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-100">
-          <h2 className="text-sm font-semibold text-slate-700 mb-4">Receita por Nível de Risco</h2>
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+          <div className="bg-gradient-to-r from-[#293b83]/5 to-transparent border-b border-slate-100 px-5 py-4 flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-[#293b83]/10 flex items-center justify-center flex-shrink-0">
+              <svg className="w-4 h-4 text-[#293b83]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-slate-800">Receita por Nível de Risco</h2>
+              <p className="text-xs text-slate-500">MRR segmentado por risco de churn</p>
+            </div>
+          </div>
+          <div className="p-5">
           <ResponsiveContainer width="100%" height={320}>
             <BarChart data={revenueByRisk} layout="vertical" margin={{ top: 10, right: 30, bottom: 10, left: 60 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
@@ -139,6 +162,7 @@ export default function RetainRevenueAnalyticsPage() {
               </Bar>
             </BarChart>
           </ResponsiveContainer>
+          </div>
         </div>
       </div>
     </div>

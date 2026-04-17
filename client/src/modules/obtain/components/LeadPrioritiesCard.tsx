@@ -14,6 +14,11 @@ interface LeadPriority {
   recommendedAction: string;
   source: string | null;
   daysInFunnel: number;
+  // new fields
+  daysWithoutAction?: number;
+  estimatedImpact?: number;
+  recommendedToday?: boolean;
+  priorityReason?: string;
 }
 
 interface LeadPrioritiesData {
@@ -22,11 +27,17 @@ interface LeadPrioritiesData {
   hotCount: number;
   warmCount: number;
   topSource: { name: string; leadCount: number } | null;
+  // new aggregate fields
+  totalPotentialRevenue?: number;
+  hotWithoutRecentAction?: number;
+  promisingChannels?: Array<{ name: string; count: number }>;
 }
 
 interface Props {
   data: LeadPrioritiesData;
   onSelectLead?: (leadId: string) => void;
+  /** Compact variant renders fewer rows and a tighter layout (for use inside ObtainLeadsPage) */
+  compact?: boolean;
 }
 
 const TIER_STYLES: Record<string, string> = {
@@ -43,13 +54,24 @@ const TIER_LABELS: Record<string, string> = {
   disqualified: "Desqualif.",
 };
 
-export function LeadPrioritiesCard({ data, onSelectLead }: Props) {
-  const { priorities, totalLtvAtStake, hotCount, warmCount, topSource } = data;
+function fmtMoney(v: number) {
+  if (v >= 1_000_000) return `R$${(v / 1_000_000).toFixed(1)}M`;
+  if (v >= 1_000) return `R$${Math.round(v / 1_000)}K`;
+  return `R$${v}`;
+}
+
+export function LeadPrioritiesCard({ data, onSelectLead, compact = false }: Props) {
+  const {
+    priorities, totalLtvAtStake, hotCount, warmCount, topSource,
+    totalPotentialRevenue, hotWithoutRecentAction, promisingChannels,
+  } = data;
 
   if (priorities.length === 0) return null;
 
+  const displayRows = compact ? priorities.slice(0, 5) : priorities;
+
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+    <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden h-full flex flex-col">
       {/* Header */}
       <div className="bg-gradient-to-r from-[#10B981]/5 to-transparent border-b border-slate-100 px-5 py-4">
         <div className="flex items-center justify-between">
@@ -60,22 +82,24 @@ export function LeadPrioritiesCard({ data, onSelectLead }: Props) {
               </svg>
             </div>
             <div>
-              <h2 className="font-bold text-slate-900 text-sm">Leads Prontos Para Agir</h2>
-              <p className="text-xs text-slate-500">Maiores oportunidades de conversão agora</p>
+              <h2 className="font-bold text-slate-900 text-sm">Prioridades de Hoje</h2>
+              <p className="text-xs text-slate-500">Leads com maior probabilidade de retorno imediato</p>
             </div>
           </div>
+          {hotWithoutRecentAction !== undefined && hotWithoutRecentAction > 0 && (
+            <span className="text-xs font-semibold bg-red-100 text-red-700 px-2.5 py-1 rounded-full animate-pulse">
+              {hotWithoutRecentAction} hot sem contato
+            </span>
+          )}
         </div>
 
         {/* Banner stats */}
         <div className="flex flex-wrap gap-4 mt-3">
-          {totalLtvAtStake > 0 && (
+          {(totalPotentialRevenue ?? totalLtvAtStake) > 0 && (
             <div className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-[#10B981]" />
               <span className="text-xs text-slate-600 font-medium">
-                {totalLtvAtStake >= 1_000_000
-                  ? `R$${(totalLtvAtStake / 1_000_000).toFixed(1)}M`
-                  : `R$${(totalLtvAtStake / 1_000).toFixed(0)}K`
-                } em LTV potencial
+                {fmtMoney(totalPotentialRevenue ?? totalLtvAtStake)} potencial imediato
               </span>
             </div>
           )}
@@ -83,21 +107,28 @@ export function LeadPrioritiesCard({ data, onSelectLead }: Props) {
             <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
             <span className="text-xs text-slate-600 font-medium">{hotCount} hot · {warmCount} warm</span>
           </div>
-          {topSource && (
+          {promisingChannels && promisingChannels.length > 0 ? (
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-[#293b83]" />
+              <span className="text-xs text-slate-600 font-medium">
+                Top canal: {promisingChannels[0].name}
+              </span>
+            </div>
+          ) : topSource ? (
             <div className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-[#293b83]" />
               <span className="text-xs text-slate-600 font-medium">Melhor canal: {topSource.name}</span>
             </div>
-          )}
+          ) : null}
         </div>
       </div>
 
       {/* Lead cards */}
-      <div className="divide-y divide-slate-50">
-        {priorities.map((p) => (
+      <div className="flex-1 overflow-y-auto divide-y divide-slate-50">
+        {displayRows.map((p) => (
           <div
             key={p.leadId}
-            className="px-5 py-4 hover:bg-slate-50/50 transition-colors cursor-pointer"
+            className={`px-5 py-3.5 hover:bg-slate-50/50 transition-colors cursor-pointer ${p.recommendedToday ? "border-l-2 border-l-[#10B981]" : ""}`}
             onClick={() => onSelectLead?.(p.leadId)}
           >
             <div className="flex items-start gap-4">
@@ -108,17 +139,27 @@ export function LeadPrioritiesCard({ data, onSelectLead }: Props) {
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${TIER_STYLES[p.scoreTier] ?? "bg-slate-100 text-slate-500"}`}>
                     {TIER_LABELS[p.scoreTier] ?? p.scoreTier}
                   </span>
+                  {p.recommendedToday && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+                      Agir hoje
+                    </span>
+                  )}
                 </div>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  LTV: <strong className="text-slate-700">{fmtBRL(p.ltvPrediction)}</strong> · Conversão: <strong className="text-slate-700">{Math.round(p.conversionProbability * 100)}%</strong>
-                  {p.industry && ` · ${p.industry}`}
-                  {p.daysInFunnel > 0 && ` · ${p.daysInFunnel}d no funil`}
-                </p>
-                {p.topFactor && (
-                  <p className="text-xs text-slate-500 mt-1">
-                    <span className="font-medium text-slate-700">✅ {p.topFactor.label}</span>
-                  </p>
+
+                {/* Priority reason */}
+                {p.priorityReason && (
+                  <p className="text-xs text-slate-500 mt-0.5">{p.priorityReason}</p>
                 )}
+
+                <p className="text-xs text-slate-500 mt-0.5">
+                  LTV: <strong className="text-slate-700">{fmtBRL(p.ltvPrediction)}</strong>
+                  {" · "}Conversão: <strong className="text-slate-700">{Math.round(p.conversionProbability * 100)}%</strong>
+                  {p.estimatedImpact !== undefined && p.estimatedImpact > 0 && (
+                    <> · <strong className="text-emerald-700">~{fmtBRL(p.estimatedImpact)} esperado</strong></>
+                  )}
+                  {p.industry && ` · ${p.industry}`}
+                </p>
+
                 <p className="text-xs text-[#10B981] font-medium mt-1 line-clamp-1">
                   → {p.recommendedAction}
                 </p>

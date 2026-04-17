@@ -131,10 +131,21 @@ export default function ObtainICPPage() {
       </div>
 
       {/* Radar chart */}
-      <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-100">
-        <h3 className="font-semibold text-slate-800 mb-1">Comparativo de Perfis — Radar de Atributos</h3>
-        <p className="text-xs text-slate-500 mb-4">Pontuação relativa de 0–100 em cada dimensão de qualidade de cliente</p>
-        <ClusterRadarChart clusters={icpClusters} />
+      <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+        <div className="bg-gradient-to-r from-[#10B981]/5 to-transparent border-b border-slate-100 px-5 py-4 flex items-center gap-2">
+          <div className="w-8 h-8 rounded-lg bg-[#10B981]/10 flex items-center justify-center flex-shrink-0">
+            <svg className="w-4 h-4 text-[#10B981]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+            </svg>
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-slate-800">Comparativo de Perfis — Radar de Atributos</h3>
+            <p className="text-xs text-slate-500">Pontuação relativa de 0–100 em cada dimensão de qualidade de cliente</p>
+          </div>
+        </div>
+        <div className="p-5">
+          <ClusterRadarChart clusters={icpClusters} />
+        </div>
       </div>
 
       {/* Insight card */}
