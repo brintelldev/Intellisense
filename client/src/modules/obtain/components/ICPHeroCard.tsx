@@ -64,27 +64,38 @@ export function ICPHeroCard({ cluster, baseline }: Props) {
   const safeTopLeads: TopLead[]    = cluster.topLeads    ?? [];
   const safeTopCustomers: TopCustomer[] = cluster.topCustomers ?? [];
 
-  // Contrast vs baseline — only show if meaningful difference (>5%)
-  const ltvMultiple = baseline.avgLtv > 0
+  // Contrast vs baseline — only show when the difference is both meaningful AND bounded.
+  // Avoid showing "-100%" when champion has 0% churn (looks like a bug).
+  const ltvMultiple = (baseline.avgLtv > 0 && cluster.avgLtv > baseline.avgLtv)
     ? Math.round((cluster.avgLtv / baseline.avgLtv) * 10) / 10 : null;
-  const churnReduction = baseline.churnRate > 0
+
+  const rawChurnRed = (baseline.churnRate > 0.005 && cluster.churnRate < baseline.churnRate)
     ? Math.round((1 - cluster.churnRate / baseline.churnRate) * 100) : null;
-  const convBoost = baseline.avgConversionRate > 0
+  // Cap between 5% and 89% so we never show -100% or trivial values
+  const churnReduction = rawChurnRed !== null && rawChurnRed >= 5 && rawChurnRed <= 89
+    ? rawChurnRed : null;
+
+  const rawConv = (baseline.avgConversionRate > 0.005 && cluster.avgConversionRate > baseline.avgConversionRate)
     ? Math.round((cluster.avgConversionRate / baseline.avgConversionRate - 1) * 100) : null;
+  const convBoost = rawConv !== null && rawConv >= 5 ? rawConv : null;
 
   const contrastItems = [
-    ltvMultiple !== null && ltvMultiple > 1.05 && { value: `${ltvMultiple}×`, label: "LTV vs média", color: "text-emerald-600", bg: "bg-emerald-50 border-emerald-100" },
-    churnReduction !== null && churnReduction > 5  && { value: `-${churnReduction}%`, label: "Menos churn",  color: "text-blue-600",    bg: "bg-blue-50 border-blue-100"    },
-    convBoost !== null && convBoost > 5            && { value: `+${convBoost}%`,  label: "Conversão",   color: "text-violet-600",  bg: "bg-violet-50 border-violet-100"  },
+    ltvMultiple !== null && ltvMultiple > 1.05 && { value: `${ltvMultiple}×`, label: "LTV vs média",  color: "text-emerald-600", bg: "bg-emerald-50 border-emerald-100" },
+    churnReduction !== null                     && { value: `-${churnReduction}%`, label: "Menos churn", color: "text-blue-600",   bg: "bg-blue-50 border-blue-100"      },
+    convBoost !== null                          && { value: `+${convBoost}%`,  label: "Conversão",   color: "text-violet-600",  bg: "bg-violet-50 border-violet-100"  },
   ].filter(Boolean) as { value: string; label: string; color: string; bg: string }[];
 
+  // Show "—" instead of 0% for metrics that are likely absent rather than genuinely zero
+  const fmtRate = (v: number, decimals = 0) =>
+    v < 0.0001 ? "—" : `${(v * 100).toFixed(decimals)}%`;
+
   const kpis = [
-    { label: "LTV Médio",    value: fmtBRL(cluster.avgLtv)                         },
-    { label: "Conversão",    value: `${(cluster.avgConversionRate * 100).toFixed(0)}%` },
-    { label: "Churn/mês",    value: `${(cluster.churnRate * 100).toFixed(1)}%`      },
-    { label: "Leads funil",  value: String(cluster.leadsInFunnel)                  },
-    { label: "Ticket",       value: cluster.avgTicket > 0 ? fmtBRL(cluster.avgTicket) : "—" },
-    { label: "Canal",        value: cluster.dominantSource ?? "—"                  },
+    { label: "LTV Médio",   value: fmtBRL(cluster.avgLtv)                         },
+    { label: "Conversão",   value: fmtRate(cluster.avgConversionRate)              },
+    { label: "Churn/mês",   value: fmtRate(cluster.churnRate, 1)                  },
+    { label: "Leads funil", value: String(cluster.leadsInFunnel)                  },
+    { label: "Ticket",      value: cluster.avgTicket > 0 ? fmtBRL(cluster.avgTicket) : "—" },
+    { label: "Canal",       value: cluster.dominantSource ?? "—"                  },
   ];
 
   return (

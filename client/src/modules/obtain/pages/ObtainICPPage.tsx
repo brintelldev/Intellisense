@@ -67,10 +67,12 @@ function ScenarioSimulator({ clusters }: { clusters: any[] }) {
   const ltvGain    = projLtv - avgLtvAll;
   const churnDrop  = avgChurnAll - projChurn;
 
-  const hasLtvDiff   = Math.abs(idealAvgLtv - avgLtvAll) > 1;
-  const hasChurnDiff = Math.abs(idealAvgChurn - avgChurnAll) > 0.001;
+  // Only show when there is a meaningful variation (>= 5% difference between best and worst)
+  const ltvRange = Math.abs(idealAvgLtv - antiAvgLtv);
+  const hasLtvDiff   = avgLtvAll > 0 && ltvRange / avgLtvAll >= 0.05;
+  const hasChurnDiff = avgChurnAll > 0.001 && Math.abs(idealAvgChurn - avgChurnAll) / avgChurnAll >= 0.05;
 
-  if (!hasLtvDiff && !hasChurnDiff) return null; // no meaningful variation to simulate
+  if (!hasLtvDiff && !hasChurnDiff) return null;
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
@@ -131,8 +133,10 @@ function ScenarioSimulator({ clusters }: { clusters: any[] }) {
             <div className="bg-emerald-50 rounded-xl p-3 text-center border border-emerald-100">
               <p className="text-xs text-slate-500 mb-1">LTV Projetado</p>
               <p className="text-lg font-extrabold text-emerald-600">{fmtBRL(projLtv)}</p>
-              {ltvGain > 1 && (
-                <p className="text-[10px] text-emerald-500 mt-0.5">+{fmtBRL(ltvGain)} vs atual</p>
+              {ltvGain > 1 && avgLtvAll > 0 && (
+                <p className="text-[10px] text-emerald-500 mt-0.5">
+                  +{Math.round((ltvGain / avgLtvAll) * 100)}% vs média atual
+                </p>
               )}
             </div>
           )}
@@ -140,8 +144,10 @@ function ScenarioSimulator({ clusters }: { clusters: any[] }) {
             <div className="bg-blue-50 rounded-xl p-3 text-center border border-blue-100">
               <p className="text-xs text-slate-500 mb-1">Churn Projetado</p>
               <p className="text-lg font-extrabold text-blue-600">{(projChurn * 100).toFixed(1)}%</p>
-              {churnDrop > 0.001 && (
-                <p className="text-[10px] text-blue-500 mt-0.5">-{(churnDrop * 100).toFixed(1)}% vs atual</p>
+              {churnDrop > 0.001 && avgChurnAll > 0 && (
+                <p className="text-[10px] text-blue-500 mt-0.5">
+                  -{Math.round((churnDrop / avgChurnAll) * 100)}% vs média atual
+                </p>
               )}
             </div>
           )}
@@ -252,7 +258,12 @@ export default function ObtainICPPage() {
           </div>
           <div className="flex-1 p-4">
             <SafeBlock label="Radar comparativo">
-              <ClusterRadarChart clusters={icpClusters} />
+              {/* Limit to top 4 clusters so the chart stays readable */}
+              <ClusterRadarChart
+                clusters={[...icpClusters]
+                  .sort((a, b) => (a.rank ?? 99) - (b.rank ?? 99))
+                  .slice(0, 4)}
+              />
             </SafeBlock>
           </div>
         </div>
@@ -306,7 +317,7 @@ export default function ObtainICPPage() {
                 <span className="text-sm font-semibold text-slate-700 text-right tabular-nums">{fmtBRL(cluster.avgLtv)}</span>
                 <span className="text-sm text-slate-500 text-right tabular-nums">{cluster.leadsInFunnel}</span>
                 <span className={`text-sm text-right tabular-nums ${cluster.type === "anti" ? "text-red-600 font-medium" : "text-slate-500"}`}>
-                  {(cluster.churnRate * 100).toFixed(1)}%
+                  {cluster.churnRate < 0.0001 ? "—" : `${(cluster.churnRate * 100).toFixed(1)}%`}
                 </span>
                 <div className="flex items-center justify-end gap-1.5">
                   <span className={`text-xs ${REC_COLORS[cfg.rec] ?? "text-slate-600"}`}>{cfg.rec}</span>
@@ -342,7 +353,7 @@ export default function ObtainICPPage() {
             {ltvMultiple && ltvMultiple > 1 && (
               <>O ICP Ideal <strong>({idealIcp.name})</strong> tem <strong>{ltvMultiple}× mais LTV</strong> que o Anti-ICP ({fmtBRL(idealIcp.avgLtv)} vs {fmtBRL(antiIcp.avgLtv)}). </>
             )}
-            Leads do cluster ideal têm churn de <strong>{(idealIcp.churnRate * 100).toFixed(1)}%</strong> vs <strong>{(antiIcp.churnRate * 100).toFixed(1)}%</strong> do Anti-ICP.
+            Leads do cluster ideal têm churn de <strong>{idealIcp.churnRate < 0.0001 ? "< 0.1%" : `${(idealIcp.churnRate * 100).toFixed(1)}%`}</strong> vs <strong>{antiIcp.churnRate < 0.0001 ? "< 0.1%" : `${(antiIcp.churnRate * 100).toFixed(1)}%`}</strong> do Anti-ICP.
             {" "}Priorize a prospecção em <strong>{idealIcp.name}</strong> para maximizar retorno.
           </p>
         ) : (
