@@ -1,0 +1,16 @@
+customerCode,name,email,segment,revenue,tenureDays,paymentRegularity,usageIntensity,satisfaction,supportVolume,contractRemainingDays,city,state
+TECH001,TechBrazil Sistemas SA,joao.silva@techbrazil.com.br,Industrial,82000,670,93,85,84,3,240,Goiânia,GO
+CONS001,ConstroBrasil LTDA,maria.santos@constrobrasil.com.br,Construção Civil,40000,305,68,50,58,10,105,Brasília,DF
+AGRO001,AgroMinas Equipamentos,pedro.costa@agrominas.com.br,Agropecuária,118000,1035,97,89,91,2,425,Uberlândia,MG
+MIN001,Mineração Alto Paranaíba,carlos.lima@altopa.com.br,Mineração,181000,480,74,57,52,11,75,Patos de Minas,MG
+IND001,Metalúrgica São Paulo ME,ana.ferreira@metsp.com.br,Industrial,27000,120,58,44,41,17,90,São Paulo,SP
+AGR002,Fazenda Progresso SA,marcos.oliveira@fprogresso.com.br,Agropecuária,65000,760,86,73,76,5,300,Barreiras,BA
+CON002,Incorporadora Cerrado LTDA,lucia.dias@incercerr.com.br,Construção Civil,51000,210,62,48,58,13,120,Goiânia,GO
+MIN002,Extração Mineral GO,roberto.souza@extmin.com.br,Mineração,93000,1400,91,82,86,4,780,Catalão,GO
+IND002,Distribuidora Industrial Brasília,fernanda.silva@dibrasilia.com.br,Industrial,30000,60,62,46,48,20,70,Brasília,DF
+SER001,Logística Planalto SA,thiago.campos@logplanalto.com.br,Outros,46000,540,80,68,72,7,210,Anápolis,GO
+AGR003,Cooperativa Grãos do Centro,juliana.neves@coopergraos.com.br,Agropecuária,142000,850,95,88,90,2,510,Luziânia,GO
+CON003,Construtora Planalto LTDA,rafael.santos@constplanalto.com.br,Construção Civil,38000,30,58,47,45,24,65,Luziânia,GO
+IND003,Indústria Química Central,beatriz.alves@iqcentral.com.br,Industrial,71000,1035,90,84,87,3,425,Anápolis,GO
+MIN003,Garimpo Tecnológico ME,diego.martins@gtecno.com.br,Mineração,18000,390,72,55,62,10,150,Caldas Novas,GO
+SER002,Transportadora Regional GO,camila.ribeiro@transreg.com.br,Outros,33000,270,78,60,65,7,180,Rio Verde,GO

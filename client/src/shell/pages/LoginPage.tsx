@@ -8,6 +8,7 @@ import RegisterPage from "./RegisterPage";
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showRegister, setShowRegister] = useState(false);
   const [, navigate] = useLocation();
@@ -15,9 +16,6 @@ export default function LoginPage() {
   const { activateDemo, isAuthenticated, isDemoMode } = useAuthContext();
 
   // Redirect after real login (not demo mode).
-  // Checking !isDemoMode prevents the effect from firing when localStorage
-  // has a stale "is-demo" flag, which would redirect the user before they
-  // can fill in the login form.
   useEffect(() => {
     if (isAuthenticated && !isDemoMode) navigate("/");
   }, [isAuthenticated, isDemoMode]);
@@ -29,8 +27,7 @@ export default function LoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await login.mutateAsync({ email, password });
-      // Navigation is handled by the useEffect above once isAuthenticated becomes true
+      await login.mutateAsync({ email, password, rememberMe });
     } catch {
       // error shown in UI
     }
@@ -38,7 +35,7 @@ export default function LoginPage() {
 
   const handleDemo = () => {
     activateDemo();
-    navigate("/"); // demo mode: isDemoMode=true so the useEffect won't fire, navigate explicitly
+    navigate("/");
   };
 
   return (
@@ -109,6 +106,17 @@ export default function LoginPage() {
               </button>
             </div>
           </div>
+
+          {/* Remember me */}
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={rememberMe}
+              onChange={(e) => setRememberMe(e.target.checked)}
+              className="w-4 h-4 rounded border-slate-300 accent-[#293b83] cursor-pointer"
+            />
+            <span className="text-sm text-slate-600">Lembrar por 7 dias</span>
+          </label>
 
           <button
             type="submit"

@@ -3,22 +3,34 @@ import { useLocation } from "wouter";
 import { ColumnMapper } from "../../../shared/components/ColumnMapper";
 import { Progress } from "../../../shared/components/ui/progress";
 import { ExecutiveInsightsStrip } from "../components/ExecutiveInsightsStrip";
-import { useObtainUploads, useUploadObtainCSV, useSuggestObtainMapping, useDeleteObtainUpload } from "../../../shared/hooks/useObtain";
+import { SnapshotEvolution } from "../../../shared/components/SnapshotEvolution";
+import { useObtainUploads, useObtainSnapshots, useUploadObtainCSV, useSuggestObtainMapping, useDeleteObtainUpload } from "../../../shared/hooks/useObtain";
 import { LoadingState } from "../../../shared/components/LoadingState";
 import { ConfirmDialog } from "../../../shared/components/ConfirmDialog";
 
 const SYSTEM_FIELDS = [
-  { key: "id",          label: "Identificador do lead", required: true,  tier: "required"  as const },
-  { key: "name",        label: "Nome do contato",       required: true,  tier: "required"  as const },
-  { key: "company",     label: "Nome da empresa",       required: true,  tier: "required"  as const },
-  { key: "industry",    label: "Setor / Indústria",     required: false, tier: "improves"  as const },
-  { key: "companySize", label: "Porte da empresa",      required: false, tier: "improves"  as const },
-  { key: "email",       label: "E-mail",                required: false, tier: "improves"  as const },
-  { key: "source",      label: "Origem do lead",        required: false, tier: "improves"  as const },
-  { key: "city",        label: "Cidade",                required: false, tier: "optional"  as const },
-  { key: "state",       label: "Estado",                required: false, tier: "optional"  as const },
-  { key: "phone",       label: "Telefone",              required: false, tier: "optional"  as const },
-  { key: "campaign",    label: "Campanha",              required: false, tier: "optional"  as const },
+  { key: "id",          label: "Identificador do lead", required: true,  tier: "required"  as const,
+    hint: "Código único do lead. Se omitido, o e-mail é usado como chave de upsert para evitar duplicatas ao reimportar." },
+  { key: "name",        label: "Nome do contato",       required: true,  tier: "required"  as const,
+    hint: "Nome completo da pessoa de contato principal do lead." },
+  { key: "company",     label: "Nome da empresa",       required: true,  tier: "required"  as const,
+    hint: "Razão social ou nome fantasia da empresa prospectada. Usado no painel de leads e no ICP clustering." },
+  { key: "industry",    label: "Setor / Indústria",     required: false, tier: "improves"  as const,
+    hint: "Setor de atuação da empresa (ex: Mineração, Construção Civil, Agropecuária). Base para ICP clustering e cruzamento com clientes Retain." },
+  { key: "companySize", label: "Porte da empresa",      required: false, tier: "improves"  as const,
+    hint: "Tamanho da empresa. Valores aceitos: micro, small, medium, large, enterprise. Influencia o score de ICP e a segmentação." },
+  { key: "email",       label: "E-mail",                required: false, tier: "improves"  as const,
+    hint: "E-mail do contato. Chave de integração Obtain↔Retain — permite rastrear se o lead virou cliente saudável, em risco ou churnou." },
+  { key: "source",      label: "Origem do lead",        required: false, tier: "improves"  as const,
+    hint: "Canal de aquisição (outbound, event, referral, paid_search, paid_social, organic, email). Base do ranking CAC vs LTV por canal." },
+  { key: "city",        label: "Cidade",                required: false, tier: "optional"  as const,
+    hint: "Cidade da empresa. Usado em filtros geográficos e na análise de concentração regional de leads." },
+  { key: "state",       label: "Estado",                required: false, tier: "optional"  as const,
+    hint: "UF da empresa (sigla de 2 letras). Complementa os filtros geográficos." },
+  { key: "phone",       label: "Telefone",              required: false, tier: "optional"  as const,
+    hint: "Telefone do contato. Armazenado para consulta no painel de leads, não afeta scoring." },
+  { key: "campaign",    label: "Campanha",              required: false, tier: "optional"  as const,
+    hint: "Nome da campanha de origem. Deve corresponder a uma campanha já cadastrada para vincular o lead ao ROI da campanha." },
 ];
 
 const TIER_INFO = {
@@ -75,6 +87,7 @@ type Step = "upload" | "mapping" | "processing" | "done";
 export default function ObtainUploadPage() {
   const [, navigate] = useLocation();
   const { data: apiUploads, isLoading: loadingUploads } = useObtainUploads();
+  const { data: snapshots } = useObtainSnapshots();
   const uploadMutation = useUploadObtainCSV();
   const suggestMappingMutation = useSuggestObtainMapping();
   const deleteMutation = useDeleteObtainUpload();
@@ -423,6 +436,9 @@ export default function ObtainUploadPage() {
           </div>
         </div>
       )}
+
+      {/* Evolution timeline (only shown when ≥2 uploads) */}
+      <SnapshotEvolution mode="obtain" snapshots={snapshots ?? []} />
 
       {/* Upload history */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">

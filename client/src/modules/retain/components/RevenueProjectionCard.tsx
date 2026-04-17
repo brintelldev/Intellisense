@@ -48,6 +48,13 @@ export function RevenueProjectionCard({ projection }: Props) {
   ];
 
   const last = months[months.length - 1];
+
+  // Zoom Y-axis into the relevant range so scenario differences are visible
+  const allValues = chartData.flatMap(d => [d.pessimistic, d.withRetention, d.optimistic]).filter(v => v > 0);
+  const yMin = Math.min(...allValues);
+  const yMax = Math.max(...allValues);
+  const yPad = Math.max((yMax - yMin) * 0.4, yMax * 0.02);
+  const yDomain: [number, number] = [Math.max(0, Math.floor((yMin - yPad) / 1000) * 1000), Math.ceil((yMax + yPad / 4) / 1000) * 1000];
   const pessimisticPct = current > 0 ? Math.round(((last.pessimistic - current) / current) * 100) : 0;
   const withRetentionPct = current > 0 ? Math.round(((last.withRetention - current) / current) * 100) : 0;
   const optimisticPct = current > 0 ? Math.round(((last.optimistic - current) / current) * 100) : 0;
@@ -87,26 +94,27 @@ export function RevenueProjectionCard({ projection }: Props) {
                 <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
               </linearGradient>
               <linearGradient id="retGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#10b981" stopOpacity={0.2} />
-                <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-              </linearGradient>
-              <linearGradient id="optGrad" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="#293b83" stopOpacity={0.2} />
                 <stop offset="95%" stopColor="#293b83" stopOpacity={0} />
+              </linearGradient>
+              <linearGradient id="optGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#10b981" stopOpacity={0.2} />
+                <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
             <XAxis dataKey="label" tick={{ fontSize: 10 }} />
             <YAxis
               tick={{ fontSize: 10 }}
+              domain={yDomain}
               tickFormatter={(v: number) =>
                 v >= 1_000_000 ? `${(v / 1_000_000).toFixed(1)}M` : `${Math.round(v / 1000)}K`
               }
             />
             <Tooltip content={<CustomTooltip />} />
             <Area type="monotone" dataKey="pessimistic" name="Sem ação" stroke="#ef4444" fill="url(#pesGrad)" strokeWidth={1.5} strokeDasharray="4 4" />
-            <Area type="monotone" dataKey="withRetention" name="Com retenção" stroke="#10b981" fill="url(#retGrad)" strokeWidth={2} />
-            <Area type="monotone" dataKey="optimistic" name="Com expansão" stroke="#293b83" fill="url(#optGrad)" strokeWidth={1.5} strokeDasharray="2 2" />
+            <Area type="monotone" dataKey="withRetention" name="Com retenção" stroke="#293b83" fill="url(#retGrad)" strokeWidth={2} />
+            <Area type="monotone" dataKey="optimistic" name="Com expansão" stroke="#10b981" fill="url(#optGrad)" strokeWidth={1.5} strokeDasharray="2 2" />
           </AreaChart>
         </ResponsiveContainer>
       </div>
@@ -118,15 +126,15 @@ export function RevenueProjectionCard({ projection }: Props) {
           <p className="text-sm font-bold text-red-600">{fmtBRL(last.pessimistic)}</p>
           <p className="text-[10px] text-red-500 font-medium">{pessimisticPct}%</p>
         </div>
-        <div className="bg-green-50 rounded-lg p-3 text-center border border-green-100">
-          <p className="text-[10px] text-slate-500 mb-1">Com retenção (90d)</p>
-          <p className="text-sm font-bold text-green-600">{fmtBRL(last.withRetention)}</p>
-          <p className="text-[10px] text-green-500 font-medium">{withRetentionPct > 0 ? "+" : ""}{withRetentionPct}%</p>
-        </div>
         <div className="bg-blue-50 rounded-lg p-3 text-center border border-blue-100">
+          <p className="text-[10px] text-slate-500 mb-1">Com retenção (90d)</p>
+          <p className="text-sm font-bold text-[#293b83]">{fmtBRL(last.withRetention)}</p>
+          <p className="text-[10px] text-[#293b83] font-medium">{withRetentionPct > 0 ? "+" : ""}{withRetentionPct}%</p>
+        </div>
+        <div className="bg-green-50 rounded-lg p-3 text-center border border-green-100">
           <p className="text-[10px] text-slate-500 mb-1">Com expansão (90d)</p>
-          <p className="text-sm font-bold text-[#293b83]">{fmtBRL(last.optimistic)}</p>
-          <p className="text-[10px] text-[#293b83] font-medium">{optimisticPct > 0 ? "+" : ""}{optimisticPct}%</p>
+          <p className="text-sm font-bold text-green-600">{fmtBRL(last.optimistic)}</p>
+          <p className="text-[10px] text-green-500 font-medium">{optimisticPct > 0 ? "+" : ""}{optimisticPct}%</p>
         </div>
       </div>
 

@@ -19,6 +19,12 @@ export function FunnelChart({ stages, className, compact = false }: FunnelChartP
         const dropOff = (stage.dropOffRate > 0 && isFinite(stage.dropOffRate)) ? `${(stage.dropOffRate * 100).toFixed(0)}% perdidos` : null;
         const isLast = i === stages.length - 1;
 
+        // Time tooltip content
+        const hasPercentiles = stage.timeP50 != null && stage.timeP50 > 0;
+        const timeLabel = hasPercentiles
+          ? `P50: ${stage.timeP50}d · P75: ${stage.timeP75}d · P95: ${stage.timeP95}d`
+          : stage.avgTimeDays > 0 ? `Médio: ${stage.avgTimeDays}d` : null;
+
         return (
           <div key={stage.id} className="flex items-center flex-1 min-w-0">
             {/* Stage block */}
@@ -30,15 +36,17 @@ export function FunnelChart({ stages, className, compact = false }: FunnelChartP
                   : "border-transparent bg-emerald-50",
                 compact ? "py-2" : "py-4"
               )}
-              style={{
-                opacity: 0.4 + (pct / 100) * 0.6,
-              }}
+              style={{ opacity: 0.4 + (pct / 100) * 0.6 }}
+              title={timeLabel ?? undefined}
             >
               <div className="text-xs font-medium text-slate-500 truncate">{stage.name}</div>
               <div className={cn("font-bold text-slate-800 tabular-nums", compact ? "text-lg" : "text-2xl")}>
                 {stage.leadsCount}
               </div>
               <div className="text-xs text-slate-400">{pct.toFixed(0)}%</div>
+              {timeLabel && !compact && (
+                <div className="text-[9px] text-slate-400 mt-0.5">{timeLabel}</div>
+              )}
               {isBottleneck && (
                 <div className="mt-1 flex justify-center">
                   <span className="inline-flex items-center gap-1 text-[10px] bg-red-100 text-red-600 rounded px-1.5 py-0.5 font-medium">

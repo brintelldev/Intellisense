@@ -1,0 +1,16 @@
+name,company,industry,companySize,email,phone,source,city,state,status
+João Silva,TechBrazil Sistemas SA,Industrial,medium,joao.silva@techbrazil.com.br,(62) 99101-2030,outbound,Goiânia,GO,won
+Maria Santos,ConstroBrasil LTDA,Construção Civil,medium,maria.santos@constrobrasil.com.br,(61) 99201-3040,event,Brasília,DF,won
+Pedro Costa,AgroMinas Equipamentos,Agropecuária,large,pedro.costa@agrominas.com.br,(34) 99301-4050,referral,Uberlândia,MG,won
+Carlos Lima,Alto Paranaíba Mineração,Mineração,large,carlos.lima@altopa.com.br,(34) 99401-5060,paid_search,Patos de Minas,MG,qualifying
+Ana Ferreira,Metalúrgica São Paulo ME,Industrial,micro,ana.ferreira@metsp.com.br,(11) 99501-6070,outbound,São Paulo,SP,contacted
+Marcos Oliveira,Fazenda Progresso SA,Agropecuária,large,marcos.oliveira@fprogresso.com.br,(77) 99601-7080,referral,Barreiras,BA,proposal
+Lucia Dias,Incorporadora Cerrado LTDA,Construção Civil,medium,lucia.dias@incercerr.com.br,(62) 99701-8090,event,Goiânia,GO,qualifying
+Roberto Souza,Extração Mineral GO,Mineração,large,roberto.souza@extmin.com.br,(64) 99801-9000,outbound,Catalão,GO,proposal
+Fernanda Silva,Distribuidora Industrial Brasília,Industrial,small,fernanda.silva@dibrasilia.com.br,(61) 99901-0010,organic,Brasília,DF,new
+Thiago Campos,Logística Planalto SA,Outros,medium,thiago.campos@logplanalto.com.br,(62) 98001-1020,paid_social,Anápolis,GO,contacted
+Juliana Neves,Cooperativa Grãos do Centro,Agropecuária,large,juliana.neves@coopergraos.com.br,(61) 98101-2030,referral,Luziânia,GO,new
+Rafael Santos,Construtora Planalto LTDA,Construção Civil,small,rafael.santos@constplanalto.com.br,(61) 98201-3040,paid_search,Luziânia,GO,qualifying
+Beatriz Alves,Indústria Química Central,Industrial,medium,beatriz.alves@iqcentral.com.br,(62) 98301-4050,organic,Anápolis,GO,contacted
+Diego Martins,Garimpo Tecnológico ME,Mineração,micro,diego.martins@gtecno.com.br,(64) 98401-5060,outbound,Caldas Novas,GO,new
+Camila Ribeiro,Transportadora Regional GO,Outros,small,camila.ribeiro@transreg.com.br,(64) 98501-6070,event,Rio Verde,GO,proposal

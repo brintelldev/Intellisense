@@ -71,6 +71,26 @@ export function useRetainUploads() {
   });
 }
 
+// ─── Snapshots (per-upload KPIs for evolution timeline) ──────────────────────
+export interface RetainSnapshot {
+  uploadId: string;
+  uploadedAt: string;
+  filename: string;
+  customerCount: number;
+  avgHealthScore: number;
+  churnRate: number;      // percentage 0–100
+  atRiskPct: number;      // percentage 0–100
+  totalRevenue: number;
+  avgChurnProb: number;
+}
+export function useRetainSnapshots() {
+  return useQuery({
+    queryKey: ["retain", "snapshots"],
+    queryFn: () => api.get<RetainSnapshot[]>("/retain/snapshots"),
+    staleTime: 60_000,
+  });
+}
+
 // ─── Create Retain Action ────────────────────────────────────────────────────
 export function useCreateRetainAction() {
   const qc = useQueryClient();

@@ -161,78 +161,73 @@ export default function RetainDashboardPage() {
         </div>
       )}
 
-      {/* ── Tendência + Distribuição de risco ──────────────────────────────── */}
-      <div className="grid grid-cols-2 gap-6">
+      {/* ── Tendência | Distribuição de risco | Renovações próximas ─────── */}
+      <div className="grid grid-cols-3 gap-6">
         <ChurnTrendChart data={analyticsTrend ?? []} />
         <RiskDistributionDonut
           data={kpis.riskDistribution ?? { low: 0, medium: 0, high: 0, critical: 0 }}
         />
-      </div>
-
-      {/* ── Renovações próximas ────────────────────────────────────────────── */}
-      {(renewalsData ?? []).length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-          <div className="bg-gradient-to-r from-[#293b83]/5 to-transparent border-b border-slate-100 px-5 py-4 flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-[#293b83]/10 flex items-center justify-center flex-shrink-0">
-              <svg className="w-4 h-4 text-[#293b83]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-            </div>
-            <div className="flex-1">
-              <h2 className="text-sm font-semibold text-slate-800">Renovações Próximas</h2>
-              <p className="text-xs text-slate-500">Contratos que vencem nos próximos 90 dias</p>
-            </div>
-            {(renewalsData ?? []).length > 5 && (
-              <button
-                onClick={() => navigate("/retain/customers")}
-                className="text-xs font-medium text-[#293b83] hover:underline"
-              >
-                Ver todos
-              </button>
-            )}
-          </div>
-          <div className="p-5 space-y-1.5">
-            {(renewalsData ?? []).slice(0, 5).map((r: any) => {
-              const urgencyColor =
-                r.contractRemainingDays < 30
-                  ? "text-red-600 bg-red-50 border-red-100"
-                  : r.contractRemainingDays < 60
-                  ? "text-orange-600 bg-orange-50 border-orange-100"
-                  : "text-amber-600 bg-amber-50 border-amber-100";
-              const riskColors: Record<string, string> = {
-                low: "bg-green-100 text-green-700",
-                medium: "bg-amber-100 text-amber-700",
-                high: "bg-orange-100 text-orange-700",
-                critical: "bg-red-100 text-red-700",
-              };
-              return (
-                <div
-                  key={r.id}
-                  className="flex items-center justify-between py-2.5 px-3 rounded-lg hover:bg-slate-50 transition-colors"
+        {(renewalsData ?? []).length > 0 && (
+          <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+            <div className="bg-gradient-to-r from-[#293b83]/5 to-transparent border-b border-slate-100 px-5 py-4 flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-[#293b83]/10 flex items-center justify-center flex-shrink-0">
+                <svg className="w-4 h-4 text-[#293b83]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <h2 className="text-sm font-semibold text-slate-800">Renovações Próximas</h2>
+                <p className="text-xs text-slate-500">Contratos que vencem nos próximos 90 dias</p>
+              </div>
+              {(renewalsData ?? []).length > 5 && (
+                <button
+                  onClick={() => navigate("/retain/customers")}
+                  className="text-xs font-medium text-[#293b83] hover:underline"
                 >
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-slate-800 truncate">{r.name}</p>
-                    <p className="text-xs text-slate-400">{r.segment ?? "Sem segmento"}</p>
+                  Ver todos
+                </button>
+              )}
+            </div>
+            <div className="p-5 space-y-1.5">
+              {(renewalsData ?? []).slice(0, 5).map((r: any) => {
+                const urgencyColor =
+                  r.contractRemainingDays < 30
+                    ? "text-red-600 bg-red-50 border-red-100"
+                    : r.contractRemainingDays < 60
+                    ? "text-orange-600 bg-orange-50 border-orange-100"
+                    : "text-amber-600 bg-amber-50 border-amber-100";
+                const riskColors: Record<string, string> = {
+                  low: "bg-green-100 text-green-700",
+                  medium: "bg-amber-100 text-amber-700",
+                  high: "bg-orange-100 text-orange-700",
+                  critical: "bg-red-100 text-red-700",
+                };
+                return (
+                  <div
+                    key={r.id}
+                    className="flex items-center justify-between py-2.5 px-3 rounded-lg hover:bg-slate-50 transition-colors"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-slate-800 truncate">{r.name}</p>
+                      <p className="text-xs text-slate-400">{r.segment ?? "Sem segmento"}</p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${urgencyColor}`}>
+                        {r.contractRemainingDays}d
+                      </span>
+                      <span
+                        className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${riskColors[r.riskLevel] ?? "bg-slate-100 text-slate-500"}`}
+                      >
+                        {r.riskLevel}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2.5 flex-shrink-0">
-                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${urgencyColor}`}>
-                      {r.contractRemainingDays}d
-                    </span>
-                    <span className="text-xs text-slate-500 tabular-nums w-8 text-center font-medium">
-                      {r.healthScore ?? "—"}
-                    </span>
-                    <span
-                      className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${riskColors[r.riskLevel] ?? "bg-slate-100 text-slate-500"}`}
-                    >
-                      {r.riskLevel}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

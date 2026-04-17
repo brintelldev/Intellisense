@@ -51,17 +51,21 @@ const AuthContext = createContext<AuthContextValue>({
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { data: user, isLoading } = useAuth();
 
-  // Demo mode is opt-in — state initialized from localStorage for persistence across reloads
+  // Demo mode uses sessionStorage (not localStorage) so it expires when the browser/tab closes.
+  // Users always see the login page on a fresh session.
   const [demoActive, setDemoActive] = useState(
-    () => typeof window !== "undefined" && localStorage.getItem("is-demo") === "true"
+    () => typeof window !== "undefined" && sessionStorage.getItem("is-demo") === "true"
   );
 
   const activateDemo = useCallback(() => {
-    localStorage.setItem("is-demo", "true");
+    sessionStorage.setItem("is-demo", "true");
+    // Clear any stale localStorage key from older versions
+    localStorage.removeItem("is-demo");
     setDemoActive(true);
   }, []);
 
   const deactivateDemo = useCallback(() => {
+    sessionStorage.removeItem("is-demo");
     localStorage.removeItem("is-demo");
     setDemoActive(false);
   }, []);

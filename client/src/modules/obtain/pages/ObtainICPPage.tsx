@@ -100,12 +100,25 @@ function ScenarioSimulator({ clusters }: { clusters: any[] }) {
               </label>
               <span className="text-xl font-extrabold text-[#10B981]">{concentration}%</span>
             </div>
-            <input
-              type="range" min={0} max={100} step={5} value={concentration}
-              onChange={e => setConcentration(Number(e.target.value))}
-              className="w-full h-2 rounded-full appearance-none cursor-pointer"
-              style={{ accentColor: "#10B981" }}
-            />
+            <div className="relative w-full h-5 flex items-center">
+              {/* Track background */}
+              <div className="absolute inset-x-0 h-2 rounded-full bg-slate-200" />
+              {/* Filled portion */}
+              <div
+                className="absolute h-2 rounded-full bg-[#10B981]"
+                style={{ width: `${concentration}%` }}
+              />
+              <input
+                type="range" min={0} max={100} step={5} value={concentration}
+                onChange={e => setConcentration(Number(e.target.value))}
+                className="absolute inset-x-0 w-full h-2 opacity-0 cursor-pointer z-10"
+              />
+              {/* Thumb */}
+              <div
+                className="absolute w-4 h-4 rounded-full bg-[#10B981] border-2 border-white shadow-md pointer-events-none"
+                style={{ left: `calc(${concentration}% - 8px)` }}
+              />
+            </div>
             <div className="flex justify-between text-[10px] text-slate-400 mt-1">
               <span>Distribuído</span><span>100% nos ideais</span>
             </div>
@@ -204,11 +217,34 @@ export default function ObtainICPPage() {
         </span>
       </div>
 
-      {/* Row 1 — Hero "Seu Perfil Campeão" */}
+      {/* Row 1 — Hero (left, 3fr) + Simulator (right, 2fr) — same height */}
       {champion && (
-        <SafeBlock label="Hero do perfil campeão">
-          <ICPHeroCard cluster={champion} baseline={baseline} />
-        </SafeBlock>
+        <div className="grid grid-cols-[3fr_2fr] gap-5 items-stretch">
+          <SafeBlock label="Hero do perfil campeão">
+            <ICPHeroCard cluster={champion} baseline={baseline} />
+          </SafeBlock>
+          <SafeBlock label="Simulador">
+            <ScenarioSimulator clusters={icpClusters} />
+          </SafeBlock>
+        </div>
+      )}
+
+      {/* Recommendation banner — full-width, compact */}
+      {idealIcp && antiIcp && (
+        <div className="bg-gradient-to-r from-[#10B981]/10 to-[#293b83]/5 rounded-xl px-5 py-3.5 border border-[#10B981]/20 flex items-center gap-3">
+          <svg className="w-4 h-4 text-[#10B981] flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+          </svg>
+          <span className="text-sm font-semibold text-slate-800 whitespace-nowrap">Recomendação de Alocação de Budget</span>
+          <p className="text-sm text-slate-600 leading-relaxed flex-1">
+            {ltvMultiple && ltvMultiple > 1 && (
+              <>O ICP Ideal <strong>({idealIcp.name})</strong> tem <strong>{ltvMultiple}× mais LTV</strong> que o Anti-ICP ({fmtBRL(idealIcp.avgLtv)} vs {fmtBRL(antiIcp.avgLtv)}). </>
+            )}
+            Leads do cluster ideal têm churn de <strong>{idealIcp.churnRate < 0.0001 ? "< 0.1%" : `${(idealIcp.churnRate * 100).toFixed(1)}%`}</strong> vs <strong>{antiIcp.churnRate < 0.0001 ? "< 0.1%" : `${(antiIcp.churnRate * 100).toFixed(1)}%`}</strong> do Anti-ICP.
+            {" "}Priorize a prospecção em <strong>{idealIcp.name}</strong> para maximizar retorno.
+          </p>
+          <span className="text-[10px] bg-[#293b83] text-white px-2 py-0.5 rounded-full whitespace-nowrap flex-shrink-0">Dados do Retain</span>
+        </div>
       )}
 
       {/* Row 2 — Priority Matrix + Radar (equal height) */}
@@ -334,34 +370,6 @@ export default function ObtainICPPage() {
         </div>
       </div>
 
-      {/* Row 4 — Scenario Simulator */}
-      <SafeBlock label="Simulador">
-        <ScenarioSimulator clusters={icpClusters} />
-      </SafeBlock>
-
-      {/* Row 5 — Recommendation card */}
-      <div className="bg-gradient-to-r from-[#10B981]/10 to-[#293b83]/5 rounded-xl p-4 border border-[#10B981]/20">
-        <div className="flex items-center gap-2 mb-2">
-          <svg className="w-4 h-4 text-[#10B981] flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-          </svg>
-          <h4 className="font-semibold text-slate-800 text-sm">Recomendação de Alocação de Budget</h4>
-          <span className="ml-auto text-[10px] bg-[#293b83] text-white px-2 py-0.5 rounded-full">Dados do Retain</span>
-        </div>
-        {idealIcp && antiIcp ? (
-          <p className="text-sm text-slate-600">
-            {ltvMultiple && ltvMultiple > 1 && (
-              <>O ICP Ideal <strong>({idealIcp.name})</strong> tem <strong>{ltvMultiple}× mais LTV</strong> que o Anti-ICP ({fmtBRL(idealIcp.avgLtv)} vs {fmtBRL(antiIcp.avgLtv)}). </>
-            )}
-            Leads do cluster ideal têm churn de <strong>{idealIcp.churnRate < 0.0001 ? "< 0.1%" : `${(idealIcp.churnRate * 100).toFixed(1)}%`}</strong> vs <strong>{antiIcp.churnRate < 0.0001 ? "< 0.1%" : `${(antiIcp.churnRate * 100).toFixed(1)}%`}</strong> do Anti-ICP.
-            {" "}Priorize a prospecção em <strong>{idealIcp.name}</strong> para maximizar retorno.
-          </p>
-        ) : (
-          <p className="text-sm text-slate-600">
-            Faça upload de dados de clientes e leads para ver a análise comparativa de ICP vs Anti-ICP.
-          </p>
-        )}
-      </div>
     </div>
   );
 }

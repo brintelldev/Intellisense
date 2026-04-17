@@ -7,7 +7,7 @@ import { Input } from "../../../shared/components/ui/input";
 import { Select } from "../../../shared/components/ui/select";
 import { EmptyState } from "../../../shared/components/EmptyState";
 import { LoadingState } from "../../../shared/components/LoadingState";
-import { useRetainCustomers } from "../../../shared/hooks/useRetain";
+import { useRetainCustomers, useCreateRetainAction } from "../../../shared/hooks/useRetain";
 import { Customer, RiskLevel, CustomerStatus } from "../../../shared/types";
 
 const SEGMENTS = ["Mineração", "Construção Civil", "Agropecuária", "Industrial"];
@@ -81,7 +81,41 @@ export default function RetainCustomersPage() {
   const [revenueMin, setRevenueMin] = useState("");
   const [revenueMax, setRevenueMax] = useState("");
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
+  const [showActionModal, setShowActionModal] = useState(false);
+  const [actionType, setActionType] = useState("call");
+  const [actionPriority, setActionPriority] = useState("medium");
+  const [actionDescription, setActionDescription] = useState("");
+  const [isCreating, setIsCreating] = useState(false);
+  const [createDone, setCreateDone] = useState(false);
+  const createAction = useCreateRetainAction();
   const [, navigate] = useLocation();
+
+  async function handleBulkCreate() {
+    setIsCreating(true);
+    try {
+      await Promise.all(
+        Array.from(selectedRows).map((id) =>
+          createAction.mutateAsync({
+            customerId: id,
+            type: actionType,
+            priority: actionPriority,
+            description: actionDescription || undefined,
+          })
+        )
+      );
+      setCreateDone(true);
+      setTimeout(() => {
+        setShowActionModal(false);
+        setSelectedRows(new Set());
+        setCreateDone(false);
+        setActionType("call");
+        setActionPriority("medium");
+        setActionDescription("");
+      }, 1200);
+    } finally {
+      setIsCreating(false);
+    }
+  }
 
   const { data: apiData, isLoading } = useRetainCustomers({
     search: search || undefined,
@@ -175,7 +209,10 @@ export default function RetainCustomersPage() {
         <div className="bg-[#293b83] text-white rounded-xl px-5 py-3 flex items-center justify-between shadow-md">
           <span className="text-sm font-medium">{selectedRows.size} empresa{selectedRows.size > 1 ? "s" : ""} selecionada{selectedRows.size > 1 ? "s" : ""}</span>
           <div className="flex items-center gap-3">
-            <button className="text-sm bg-white/20 hover:bg-white/30 px-4 py-1.5 rounded-lg transition-colors font-medium">
+            <button
+              onClick={() => setShowActionModal(true)}
+              className="text-sm bg-white/20 hover:bg-white/30 px-4 py-1.5 rounded-lg transition-colors font-medium"
+            >
               Criar ação de retenção para {selectedRows.size} selecionada{selectedRows.size > 1 ? "s" : ""}
             </button>
             <button
@@ -197,6 +234,107 @@ export default function RetainCustomersPage() {
         selectedRows={selectedRows}
         onSelectionChange={setSelectedRows}
       />
+
+      {/* Bulk action modal */}
+      {showActionModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => !isCreating && setShowActionModal(false)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-[#293b83]/5 to-transparent border-b border-slate-100 px-6 py-4 flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-semibold text-slate-800">Criar ação de retenção</h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Para {selectedRows.size} empresa{selectedRows.size > 1 ? "s" : ""} selecionada{selectedRows.size > 1 ? "s" : ""}
+                </p>
+              </div>
+              <button
+                onClick={() => !isCreating && setShowActionModal(false)}
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="px-6 py-5 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Tipo de ação</label>
+                <select
+                  value={actionType}
+                  onChange={(e) => setActionType(e.target.value)}
+                  className="w-full h-9 px-3 text-sm border border-slate-200 rounded-lg bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#293b83]/30"
+                >
+                  <option value="call">📞 Ligação</option>
+                  <option value="email">✉️ E-mail</option>
+                  <option value="whatsapp">💬 WhatsApp</option>
+                  <option value="demo">🖥️ Demo</option>
+                  <option value="proposal">📄 Proposta</option>
+                  <option value="follow_up">🔄 Follow-up</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Prioridade</label>
+                <select
+                  value={actionPriority}
+                  onChange={(e) => setActionPriority(e.target.value)}
+                  className="w-full h-9 px-3 text-sm border border-slate-200 rounded-lg bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#293b83]/30"
+                >
+                  <option value="high">🔴 Alta</option>
+                  <option value="medium">🟡 Média</option>
+                  <option value="low">🟢 Baixa</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Descrição <span className="font-normal text-slate-400">(opcional)</span></label>
+                <textarea
+                  value={actionDescription}
+                  onChange={(e) => setActionDescription(e.target.value)}
+                  placeholder="Descreva o objetivo desta ação..."
+                  rows={3}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white text-slate-700 resize-none focus:outline-none focus:ring-2 focus:ring-[#293b83]/30 placeholder:text-slate-400"
+                />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-3">
+              {createDone ? (
+                <span className="text-sm font-medium text-green-600 flex items-center gap-1.5">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
+                  Ações criadas com sucesso!
+                </span>
+              ) : (
+                <>
+                  <button
+                    onClick={() => setShowActionModal(false)}
+                    disabled={isCreating}
+                    className="h-9 px-4 text-sm text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleBulkCreate}
+                    disabled={isCreating}
+                    className="h-9 px-5 text-sm font-medium bg-[#293b83] text-white rounded-lg hover:bg-[#1e2d6b] disabled:opacity-60 flex items-center gap-2"
+                  >
+                    {isCreating ? (
+                      <>
+                        <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" /></svg>
+                        Criando...
+                      </>
+                    ) : (
+                      `Criar para ${selectedRows.size} empresa${selectedRows.size > 1 ? "s" : ""}`
+                    )}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

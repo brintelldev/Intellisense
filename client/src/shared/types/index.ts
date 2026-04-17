@@ -143,11 +143,26 @@ export interface Campaign {
   name: string;
   channel: CampaignChannel;
   totalLeads: number;
-  cac: number;
-  avgLtv: number;
-  projectedRoi: number;
-  roiStatus: "excellent" | "good" | "neutral" | "poor" | "negative";
-  budget: number;
+  wonLeads: number;
+  conversionRate: number;
+  // LTV
+  avgLtv: number;           // effective (verified if sample ≥ 3, else predicted)
+  avgLtvPredicted: number;
+  avgLtvVerified: number | null;
+  verifiedSampleSize: number;
+  // CAC — null when no budget data imported
+  cac: number | null;
+  budgetSource: "imported" | null;
+  // ROI — null when no real CAC
+  projectedRoi: number | null;
+  paybackDays: number | null;
+  roiStatus: "excellent" | "good" | "neutral" | "poor" | null;
+  // Retain bridge
+  wonCustomersHealthy: number;
+  wonCustomersAtRisk: number;
+  wonCustomersChurned: number;
+  postSaleChurnRate: number;
+  ltvChurnAdjusted: number | null;
 }
 
 export interface FunnelStage {
@@ -160,4 +175,47 @@ export interface FunnelStage {
   dropOffRate: number;
   revenueAtRisk: number;
   isBottleneck: boolean;
+  // New enriched fields (optional for backward compat)
+  timeP50?: number;
+  timeP75?: number;
+  timeP95?: number;
+  severityScore?: number;
+  isStuck?: boolean;
+  bySource?: { source: string; count: number; dropOffRate: number }[];
+}
+
+export interface FunnelRetainFeedback {
+  wonLeadsMatched: number;
+  becameHealthy: number;
+  becameAtRisk: number;
+  churnedAfterWon: number;
+  avgTenureDays: number;
+  topChurningSegment: string | null;
+}
+
+export interface FunnelBottleneck {
+  stage: string;
+  stageName: string;
+  source: string | null;
+  severityScore: number;
+  rationale: string;
+}
+
+export interface FunnelResponse {
+  stages: FunnelStage[];
+  sourceStageMatrix: {
+    rows: string[];
+    cols: string[];
+    cells: number[][];
+  };
+  paretoLeads: {
+    top: {
+      id: string; name: string; company: string | null;
+      status: string; source: string | null; daysInStage: number;
+      ltvPrediction: number | null;
+    }[];
+    others: { count: number; sumLtv: number };
+  };
+  postWonRetainFeedback: FunnelRetainFeedback;
+  biggestBottleneck: FunnelBottleneck | null;
 }

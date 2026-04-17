@@ -42,10 +42,12 @@ export function useObtainICPClusters() {
 }
 
 // ─── Funnel ──────────────────────────────────────────────────────────────────
+import type { FunnelResponse } from "../types";
+
 export function useObtainFunnel() {
   return useQuery({
     queryKey: ["obtain", "funnel"],
-    queryFn: () => api.get<any[]>("/obtain/funnel"),
+    queryFn: () => api.get<FunnelResponse>("/obtain/funnel"),
     staleTime: 60_000,
   });
 }
@@ -65,6 +67,27 @@ export function useObtainUploads() {
     queryKey: ["obtain", "uploads"],
     queryFn: () => api.get<any[]>("/obtain/uploads"),
     staleTime: 30_000,
+  });
+}
+
+// ─── Snapshots (per-upload KPIs for evolution timeline) ──────────────────────
+export interface ObtainSnapshot {
+  uploadId: string;
+  uploadedAt: string;
+  filename: string;
+  leadCount: number;
+  wonCount: number;
+  conversionRate: number;    // percentage 0–100
+  hotPct: number;            // percentage 0–100
+  avgLtvPrediction: number;
+  avgScore: number;
+  avgConversionProb: number;
+}
+export function useObtainSnapshots() {
+  return useQuery({
+    queryKey: ["obtain", "snapshots"],
+    queryFn: () => api.get<ObtainSnapshot[]>("/obtain/snapshots"),
+    staleTime: 60_000,
   });
 }
 

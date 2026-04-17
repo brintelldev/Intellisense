@@ -5,6 +5,7 @@ interface SystemField {
   key: string;
   label: string;
   required?: boolean;
+  hint?: string;
 }
 
 interface ServerSuggestion {
@@ -165,8 +166,19 @@ export function ColumnMapper({ csvColumns, systemFields, onMappingChange, server
               return (
                 <tr key={field.key} className={mapped ? "bg-green-50/50" : ""}>
                   <td className="px-4 py-2.5">
-                    <span className="font-medium text-slate-700">{field.label}</span>
-                    {field.required && <span className="ml-1 text-red-400">*</span>}
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="font-medium text-slate-700">{field.label}</span>
+                      {field.required && <span className="text-red-400">*</span>}
+                      {field.hint && (
+                        <span className="relative group inline-flex">
+                          <span className="w-4 h-4 rounded-full bg-slate-200 text-slate-500 text-[10px] font-bold flex items-center justify-center cursor-default select-none hover:bg-slate-300 transition-colors">i</span>
+                          <span className="absolute left-5 top-1/2 -translate-y-1/2 z-50 hidden group-hover:flex w-64 bg-slate-800 text-white text-xs rounded-lg px-3 py-2 shadow-lg leading-relaxed pointer-events-none">
+                            {field.hint}
+                            <span className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-slate-800" />
+                          </span>
+                        </span>
+                      )}
+                    </span>
                   </td>
                   <td className="px-4 py-2.5">
                     <select

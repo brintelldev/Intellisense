@@ -4,8 +4,10 @@ import { ColumnMapper } from "../../../shared/components/ColumnMapper";
 import { Progress } from "../../../shared/components/ui/progress";
 import { LoadingState } from "../../../shared/components/LoadingState";
 import { ConfirmDialog } from "../../../shared/components/ConfirmDialog";
+import { SnapshotEvolution } from "../../../shared/components/SnapshotEvolution";
 import {
   useRetainUploads,
+  useRetainSnapshots,
   useUploadRetainCSV,
   useSuggestRetainMapping,
   usePreviewRetainUpload,
@@ -13,17 +15,28 @@ import {
 } from "../../../shared/hooks/useRetain";
 
 const SYSTEM_FIELDS = [
-  { key: "id",                   label: "Identificador do cliente",   required: true,  tier: "required" as const },
-  { key: "name",                 label: "Nome",                        required: true,  tier: "required" as const },
-  { key: "revenue",              label: "Receita / Valor do Contrato", required: true,  tier: "required" as const },
-  { key: "satisfaction",         label: "Satisfação / NPS",            required: false, tier: "improves" as const },
-  { key: "contractRemainingDays",label: "Vínculo contratual",          required: false, tier: "improves" as const },
-  { key: "usageIntensity",       label: "Intensidade de uso",          required: false, tier: "improves" as const },
-  { key: "paymentRegularity",    label: "Regularidade de pagamento",   required: false, tier: "improves" as const },
-  { key: "tenureDays",           label: "Tempo de relacionamento",     required: false, tier: "improves" as const },
-  { key: "interactionFrequency", label: "Frequência de interação",     required: false, tier: "optional" as const },
-  { key: "supportVolume",        label: "Volume de suporte",           required: false, tier: "optional" as const },
-  { key: "recencyDays",          label: "Recência",                    required: false, tier: "optional" as const },
+  { key: "id",                   label: "Identificador do cliente",   required: true,  tier: "required" as const,
+    hint: "Código único do cliente — número de contrato, CNPJ ou código ERP. Usado para atualizar o registro sem duplicar ao reimportar." },
+  { key: "name",                 label: "Nome",                        required: true,  tier: "required" as const,
+    hint: "Razão social ou nome fantasia do cliente. Aparece em alertas, predições e no painel de empresas." },
+  { key: "revenue",              label: "Receita / Valor do Contrato", required: true,  tier: "required" as const,
+    hint: "MRR ou valor total do contrato em reais. Base do cálculo de receita em risco, ROI de retenção e ranking de prioridade." },
+  { key: "satisfaction",         label: "Satisfação / NPS",            required: false, tier: "improves" as const,
+    hint: "Nota de satisfação ou NPS. Escalas 0–10, 1–5 e 0–100 são detectadas automaticamente. Forte preditor de churn." },
+  { key: "contractRemainingDays",label: "Vínculo contratual",          required: false, tier: "improves" as const,
+    hint: "Dias restantes até o vencimento do contrato — ou data no formato DD/MM/AAAA. Ativa alertas de renovação antecipada." },
+  { key: "usageIntensity",       label: "Intensidade de uso",          required: false, tier: "improves" as const,
+    hint: "Percentual de uso do produto ou plataforma (0–100). Uso baixo é um dos principais preditores de cancelamento." },
+  { key: "paymentRegularity",    label: "Regularidade de pagamento",   required: false, tier: "improves" as const,
+    hint: "Percentual de pagamentos realizados no prazo (0–100). Inadimplência crescente eleva significativamente o risco de churn." },
+  { key: "tenureDays",           label: "Tempo de relacionamento",     required: false, tier: "improves" as const,
+    hint: "Dias desde o início do contrato ou primeira compra. Clientes com menos de 90 dias têm risco de churn estruturalmente maior." },
+  { key: "interactionFrequency", label: "Frequência de interação",     required: false, tier: "optional" as const,
+    hint: "Número de contatos registrados (reuniões, e-mails, ligações) por período. Baixa frequência indica risco de distanciamento." },
+  { key: "supportVolume",        label: "Volume de suporte",           required: false, tier: "optional" as const,
+    hint: "Número de chamados ou tickets abertos nos últimos 30 dias. Picos elevados indicam insatisfação ou problemas operacionais recorrentes." },
+  { key: "recencyDays",          label: "Recência",                    required: false, tier: "optional" as const,
+    hint: "Dias desde o último contato registrado. Quanto maior o valor, maior o risco de inatividade e distanciamento do cliente." },
 ];
 
 const TIER_INFO = {
@@ -110,6 +123,7 @@ function ScaleChip({ scale }: { scale: string }) {
 export default function RetainUploadPage() {
   const [, navigate] = useLocation();
   const { data: apiUploads, isLoading: uploadsLoading } = useRetainUploads();
+  const { data: snapshots } = useRetainSnapshots();
   const uploadMutation = useUploadRetainCSV();
   const suggestMappingMutation = useSuggestRetainMapping();
   const previewMutation = usePreviewRetainUpload();
@@ -592,6 +606,9 @@ export default function RetainUploadPage() {
           </div>
         </div>
       )}
+
+      {/* Evolution timeline (only shown when ≥2 uploads) */}
+      <SnapshotEvolution mode="retain" snapshots={snapshots ?? []} />
 
       {/* Previous uploads */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">

@@ -47,7 +47,7 @@ export function useAuth() {
 export function useLogin() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (data: { email: string; password: string }) =>
+    mutationFn: async (data: { email: string; password: string; rememberMe?: boolean }) =>
       unwrap(await api.post<AuthResponse>("/auth/login", data)),
     onSuccess: (user) => {
       queryClient.setQueryData(["auth", "me"], user);

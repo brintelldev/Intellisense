@@ -136,7 +136,7 @@ authRouter.post("/register", async (req, res) => {
 // Login
 authRouter.post("/login", async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, rememberMe } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({ error: "Email e senha obrigatórios" });
@@ -158,6 +158,12 @@ authRouter.post("/login", async (req, res) => {
     // Set session
     req.session.userId = user.id;
     req.session.tenantId = user.tenantId;
+
+    // "Lembrar-me": extend cookie lifetime to 7 days only when explicitly requested.
+    // Default (no rememberMe): session cookie — expires when the browser closes.
+    if (rememberMe) {
+      req.session.cookie.maxAge = 7 * 24 * 60 * 60 * 1000;
+    }
 
     res.json({
       user: { id: user.id, email: user.email, name: user.name, role: user.role },

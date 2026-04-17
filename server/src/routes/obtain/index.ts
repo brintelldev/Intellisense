@@ -14,11 +14,12 @@ import {
 } from "../../../../shared/schema.js";
 import { runObtainScoring, generateObtainAlerts, generateLeadNarrative, generateRecommendedOffer, generateSalesCadence } from "../../engine/obtain-scoring.js";
 import { generateIcpClusters } from "../../engine/icp-clustering.js";
+import { resolveWonLeadCustomerLinks } from "../../lib/lead-customer-bridge.js";
+import { computePareto } from "../../lib/pareto.js";
 import { suggestMapping } from "../../engine/column-mapper.js";
 import { readCsvFile } from "../../lib/csv-reader.js";
 import { parseNumber } from "../../lib/value-normalizer.js";
 import { formatTimeAgo } from "../../lib/time-utils.js";
-import { computePareto } from "../../lib/pareto.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -77,11 +78,14 @@ obtainRouter.get("/dashboard", async (req, res) => {
     const conversionScore = conversionRate * 25;
 
     // Velocity score (20pts) - inverse of avg days in funnel (normalize: 0 days=20pts, 90days=0pts)
+    // Returns 0 when there are no leads — the SQL AVG of an empty set is NULL, and we must not
+    // fall back to a hardcoded 30-day default that would produce a spurious non-zero score.
     const [avgFunnelTime] = await db.select({
       avgDays: sql<number>`avg(EXTRACT(EPOCH FROM (now() - ${leads.createdAt}))) / 86400`,
     }).from(leads).where(and(eq(leads.tenantId, tenantId), sql`${leads.status} != 'won'`));
-    const avgDays = Math.max(0, avgFunnelTime?.avgDays ?? 30);
-    const velocityScore = Math.max(0, (1 - avgDays / 90)) * 20;
+    const velocityScore = totalLeadsForHealth > 0
+      ? Math.max(0, (1 - Math.max(0, avgFunnelTime?.avgDays ?? 30) / 90)) * 20
+      : 0;
 
     // Diversification score (15pts) - Shannon entropy of sources
     const sourceDiversityRows = await db.select({
@@ -842,82 +846,152 @@ obtainRouter.get("/icp-clusters", async (req, res) => {
 });
 
 // ─── GET /funnel ─────────────────────────────────────────────────────────────
-// Calculated dynamically from real lead statuses — no hardcoded data
 obtainRouter.get("/funnel", async (req, res) => {
   try {
     const tenantId = req.tenantId!;
 
-    // Count leads per status
+    const STAGES = [
+      { key: "new",        name: "Prospecção",  order: 1 },
+      { key: "qualifying", name: "Qualificação", order: 2 },
+      { key: "contacted",  name: "Demo",         order: 3 },
+      { key: "proposal",   name: "Proposta",     order: 4 },
+      { key: "won",        name: "Fechado",      order: 5 },
+    ];
+
+    // ── 1. Count per status ───────────────────────────────────────────────────
     const statusCounts = await db.select({
       status: leads.status,
       count: sql<number>`count(*)::int`,
-    })
-      .from(leads)
-      .where(eq(leads.tenantId, tenantId))
-      .groupBy(leads.status);
+    }).from(leads).where(eq(leads.tenantId, tenantId)).groupBy(leads.status);
 
     const byStatus = Object.fromEntries(statusCounts.map(r => [r.status, r.count]));
 
-    // Average LTV per stage from scores
+    // ── 2. Average LTV per stage ──────────────────────────────────────────────
     const ltvByStatus = await db.select({
       status: leads.status,
       avgLtv: sql<number>`coalesce(avg(${obtainScores.ltvPrediction}), 0)::real`,
-    })
-      .from(leads)
+    }).from(leads)
       .innerJoin(obtainScores, eq(obtainScores.leadId, leads.id))
       .where(eq(leads.tenantId, tenantId))
       .groupBy(leads.status);
 
     const ltvMap = Object.fromEntries(ltvByStatus.map(r => [r.status, r.avgLtv]));
 
-    // Hot leads stuck in each stage > 7 days
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-    const sevenDaysAgoStr = sevenDaysAgo.toISOString();
+    // ── 3. Time percentiles (P50/P75/P95) per stage via raw SQL ─────────────
+    const percResult = await db.execute(sql`
+      SELECT
+        status,
+        COALESCE(ROUND(CAST(percentile_cont(0.50) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (now() - created_at)) / 86400) AS numeric), 1), 0) AS p50,
+        COALESCE(ROUND(CAST(percentile_cont(0.75) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (now() - created_at)) / 86400) AS numeric), 1), 0) AS p75,
+        COALESCE(ROUND(CAST(percentile_cont(0.95) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (now() - created_at)) / 86400) AS numeric), 1), 0) AS p95,
+        COALESCE(ROUND(CAST(avg(EXTRACT(EPOCH FROM (now() - created_at)) / 86400) AS numeric), 1), 0) AS avg_days
+      FROM leads
+      WHERE tenant_id = ${tenantId}
+      GROUP BY status
+    `);
+    const percRows = (percResult.rows ?? []) as { status: string; p50: number; p75: number; p95: number; avg_days: number }[];
+    const percMap = Object.fromEntries(percRows.map(r => [r.status, r]));
 
-    const hotStuckRows = await db.select({
-      status: leads.status,
-      count: sql<number>`count(*)::int`,
+    // ── 4. Hot stuck using dynamic threshold: max(3, 1.5 × stageP50) days ───
+    const hotLeadsRaw = await db.select({
+      id:         leads.id,
+      status:     leads.status,
+      daysInStage: sql<number>`EXTRACT(EPOCH FROM (now() - ${leads.createdAt})) / 86400`,
     }).from(leads)
       .innerJoin(obtainScores, eq(obtainScores.leadId, leads.id))
+      .where(and(eq(leads.tenantId, tenantId), eq(obtainScores.riskTier, "hot")));
+
+    const hotStuckMap: Record<string, number> = {};
+    for (const h of hotLeadsRaw) {
+      const stk = h.status ?? "new";
+      const stageP50 = Number(percMap[stk]?.p50 ?? 0);
+      const threshold = Math.max(3, 1.5 * (stageP50 > 0 ? stageP50 : 7));
+      if ((h.daysInStage ?? 0) > threshold) {
+        hotStuckMap[stk] = (hotStuckMap[stk] ?? 0) + 1;
+      }
+    }
+
+    // ── 5. Source × stage matrix ─────────────────────────────────────────────
+    const sourceStageRows = await db.select({
+      status: leads.status,
+      source: leads.source,
+      count:  sql<number>`count(*)::int`,
+    }).from(leads).where(eq(leads.tenantId, tenantId)).groupBy(leads.status, leads.source);
+
+    // Map source × stage counts for each stage's bySource
+    const stageSourceMap: Record<string, Record<string, number>> = {};
+    for (const r of sourceStageRows) {
+      const stk = r.status ?? "new";
+      const src = r.source ?? "other";
+      if (!stageSourceMap[stk]) stageSourceMap[stk] = {};
+      stageSourceMap[stk][src] = r.count;
+    }
+
+    // Build sourceStageMatrix
+    const allSources = [...new Set(sourceStageRows.map(r => r.source ?? "other"))].sort();
+    const stageKeys  = STAGES.map(s => s.key);
+    const matrixCells: number[][] = allSources.map(src =>
+      stageKeys.map(stk => stageSourceMap[stk]?.[src] ?? 0),
+    );
+
+    // Stage-level source breakdown with drop-off
+    const stageBySource: Record<string, { source: string; count: number; dropOffRate: number }[]> = {};
+    for (const stg of STAGES) {
+      const srcCounts = stageSourceMap[stg.key] ?? {};
+      const total = Object.values(srcCounts).reduce((a, b) => a + b, 0);
+      stageBySource[stg.key] = Object.entries(srcCounts).map(([src, cnt]) => ({
+        source: src,
+        count: cnt,
+        dropOffRate: total > 0 ? Math.round((1 - cnt / total) * 1000) / 1000 : 0,
+      })).sort((a, b) => b.count - a.count);
+    }
+
+    // ── 6. Pareto: non-won leads with LTV (top N summing 70% of LTV at risk) ─
+    const activeLtv = await db.select({
+      id:            leads.id,
+      name:          leads.name,
+      company:       leads.company,
+      status:        leads.status,
+      source:        leads.source,
+      daysInStage:   sql<number>`ROUND(CAST(EXTRACT(EPOCH FROM (now() - ${leads.createdAt})) / 86400 AS numeric), 0)`,
+      ltvPrediction: obtainScores.ltvPrediction,
+    }).from(leads)
+      .leftJoin(obtainScores, eq(obtainScores.leadId, leads.id))
       .where(and(
         eq(leads.tenantId, tenantId),
-        eq(obtainScores.riskTier, "hot"),
-        sql`${leads.updatedAt} < ${sevenDaysAgoStr}::timestamp`,
+        sql`${leads.status} NOT IN ('won', 'lost')`,
       ))
-      .groupBy(leads.status);
+      .orderBy(desc(obtainScores.ltvPrediction));
 
-    const hotStuckMap = Object.fromEntries(hotStuckRows.map(r => [r.status, r.count]));
+    const paretoResult = computePareto(activeLtv, l => l.ltvPrediction ?? 0);
+    const topN   = paretoResult?.topN ?? Math.min(5, activeLtv.length);
+    const topLeads  = activeLtv.slice(0, topN);
+    const others = activeLtv.slice(topN);
 
-    // Average time in funnel per status (days since created_at)
-    const avgTimeRows = await db.select({
-      status: leads.status,
-      avgDays: sql<number>`avg(EXTRACT(EPOCH FROM (now() - ${leads.createdAt}))) / 86400`,
-    }).from(leads)
-      .where(and(eq(leads.tenantId, tenantId), sql`${leads.status} != 'won'`))
-      .groupBy(leads.status);
+    // ── 7. Retain bridge (post-won feedback) ─────────────────────────────────
+    const bridge = await resolveWonLeadCustomerLinks(tenantId);
+    const postWonRetainFeedback = bridge.funnelFeedback;
 
-    const avgTimeMap = Object.fromEntries(avgTimeRows.map(r => [r.status, Math.round(r.avgDays ?? 0)]));
+    // ── 8. Build enriched stages ──────────────────────────────────────────────
+    const counts  = STAGES.map(s => byStatus[s.key] ?? 0);
+    const prospect = counts[0] || 1;
 
-    const STAGES = [
-      { key: "new",        name: "Prospecção",   order: 1 },
-      { key: "qualifying", name: "Qualificação",  order: 2 },
-      { key: "contacted",  name: "Demo",          order: 3 },
-      { key: "proposal",   name: "Proposta",      order: 4 },
-      { key: "won",        name: "Fechado",       order: 5 },
-    ];
-
-    const counts = STAGES.map(s => byStatus[s.key] ?? 0);
-    const prospect = counts[0] || 1; // avoid division by zero
-
-    const data = STAGES.map((s, i) => {
-      const count = counts[i];
-      const prev = i > 0 ? counts[i - 1] : null;
-      // dropOffRate as decimal 0-1 (frontend multiplies by 100 to display)
+    const stageData = STAGES.map((s, i) => {
+      const count    = counts[i];
+      const prev     = i > 0 ? counts[i - 1] : null;
       const dropOffRate = prev != null && prev > 0
-        ? Math.round((1 - count / prev) * 1000) / 1000
-        : 0;
+        ? Math.round((1 - count / prev) * 1000) / 1000 : 0;
+      const perc     = percMap[s.key] ?? { p50: 0, p75: 0, p95: 0, avg_days: 0 };
       const revenueAtRisk = Math.round((ltvMap[s.key] ?? 0) * count);
+
+      // Global baseline median (avg of all non-won stage medians)
+      const globalMedian = percRows
+        .filter(r => r.status !== "won")
+        .reduce((s, r) => s + Number(r.p50), 0) / Math.max(1, percRows.filter(r => r.status !== "won").length);
+      const isStuck = Number(perc.p50) > 1.5 * globalMedian && globalMedian > 0;
+      const severityScore = revenueAtRisk > 0
+        ? Math.round((revenueAtRisk / 1_000_000) * dropOffRate * Math.max(1, Number(perc.p75) / Math.max(1, globalMedian)) * 100) / 100
+        : 0;
 
       return {
         id: s.key,
@@ -925,26 +999,59 @@ obtainRouter.get("/funnel", async (req, res) => {
         order: s.order,
         leadsCount: count,
         hotLeadsStuck: hotStuckMap[s.key] ?? 0,
-        avgTimeDays: avgTimeMap[s.key] ?? 0,
+        avgTimeDays: Math.round(Number(perc.avg_days)),
+        timeP50: Number(perc.p50),
+        timeP75: Number(perc.p75),
+        timeP95: Number(perc.p95),
         dropOffRate,
         conversionFromTop: Math.round((count / prospect) * 100),
         revenueAtRisk,
         isBottleneck: false,
+        isStuck,
+        severityScore,
+        bySource: stageBySource[s.key] ?? [],
       };
     });
 
-    // Mark highest drop-off as bottleneck (excluding first stage)
-    let maxDrop = 0;
-    let bottleneckIdx = -1;
-    data.forEach((s, i) => {
-      if (i > 0 && s.dropOffRate > maxDrop) {
-        maxDrop = s.dropOffRate;
-        bottleneckIdx = i;
-      }
-    });
-    data.forEach((s, i) => { s.isBottleneck = i === bottleneckIdx; });
+    // ── 9. Biggest bottleneck (severity-based, excluding first & last stage) ──
+    let biggestBottleneck: {
+      stage: string; stageName: string; source: string | null;
+      severityScore: number; rationale: string;
+    } | null = null;
 
-    res.json(data);
+    let maxSeverity = 0;
+    for (const stage of stageData.slice(1, -1)) {
+      if (stage.severityScore > maxSeverity) {
+        maxSeverity = stage.severityScore;
+        const topSource = stage.bySource[0];
+        biggestBottleneck = {
+          stage: stage.id,
+          stageName: stage.name,
+          source: topSource?.count > (stage.leadsCount * 0.4) ? topSource.source : null,
+          severityScore: stage.severityScore,
+          rationale: topSource?.count > (stage.leadsCount * 0.4)
+            ? `Estágio ${stage.name} tem drop-off de ${Math.round(stage.dropOffRate * 100)}% — canal ${topSource.source} concentra ${Math.round((topSource.count / stage.leadsCount) * 100)}% dos leads parados. Receita em risco: R$${(stage.revenueAtRisk / 1_000_000).toFixed(1)}M.`
+            : `Estágio ${stage.name} tem drop-off de ${Math.round(stage.dropOffRate * 100)}% e P50 de ${stage.timeP50}d (P75: ${stage.timeP75}d). Receita em risco: R$${(stage.revenueAtRisk / 1_000_000).toFixed(1)}M.`,
+        };
+      }
+    }
+
+    // Mark bottleneck stage
+    stageData.forEach(s => { s.isBottleneck = biggestBottleneck?.stage === s.id; });
+
+    res.json({
+      stages: stageData,
+      sourceStageMatrix: { rows: allSources, cols: stageKeys, cells: matrixCells },
+      paretoLeads: {
+        top: topLeads,
+        others: {
+          count: others.length,
+          sumLtv: Math.round(others.reduce((s, l) => s + (l.ltvPrediction ?? 0), 0)),
+        },
+      },
+      postWonRetainFeedback,
+      biggestBottleneck,
+    });
   } catch (err) {
     console.error("Obtain funnel error:", err);
     res.status(500).json({ error: "Erro ao buscar funil" });
@@ -952,23 +1059,11 @@ obtainRouter.get("/funnel", async (req, res) => {
 });
 
 // ─── GET /campaigns ──────────────────────────────────────────────────────────
-// Calculated dynamically from real lead sources + ML scores — no hardcoded data
+// CAC is only shown when real budget data exists in obtain_campaigns.budget.
+// LTV is shown as "verified" (from real customers via bridge) when sample >= 3.
 obtainRouter.get("/campaigns", async (req, res) => {
   try {
     const tenantId = req.tenantId!;
-
-    const rows = await db.select({
-      source: leads.source,
-      totalLeads: sql<number>`count(${leads.id})::int`,
-      wonLeads: sql<number>`count(case when ${leads.status} = 'won' then 1 end)::int`,
-      avgLtv: sql<number>`coalesce(avg(${obtainScores.ltvPrediction}), 0)::real`,
-      maxLtv: sql<number>`coalesce(max(${obtainScores.ltvPrediction}), 0)::real`,
-    })
-      .from(leads)
-      .leftJoin(obtainScores, eq(obtainScores.leadId, leads.id))
-      .where(eq(leads.tenantId, tenantId))
-      .groupBy(leads.source)
-      .orderBy(sql`avg(${obtainScores.ltvPrediction}) DESC NULLS LAST`);
 
     const CHANNEL_LABELS: Record<string, string> = {
       referral: "Indicação de Clientes",
@@ -983,26 +1078,71 @@ obtainRouter.get("/campaigns", async (req, res) => {
       other: "Outros",
     };
 
-    // Estimate CAC: without real budget data, use LTV-based heuristic
-    // (LTV / expected ROI multiple per channel type)
-    const CAC_MULTIPLIER: Record<string, number> = {
-      referral: 0.002, event: 0.012, paid_social: 0.007,
-      paid_search: 0.005, outbound: 0.015, organic: 0.001,
-      email: 0.002, csv: 0, manual: 0, other: 0.01,
-    };
+    // ── 1. Lead counts + predicted LTV per source ─────────────────────────────
+    const leadRows = await db.select({
+      source:     leads.source,
+      totalLeads: sql<number>`count(${leads.id})::int`,
+      wonLeads:   sql<number>`count(case when ${leads.status} = 'won' then 1 end)::int`,
+      avgLtvPredicted: sql<number>`coalesce(avg(${obtainScores.ltvPrediction}), 0)::real`,
+    }).from(leads)
+      .leftJoin(obtainScores, eq(obtainScores.leadId, leads.id))
+      .where(eq(leads.tenantId, tenantId))
+      .groupBy(leads.source)
+      .orderBy(sql`avg(${obtainScores.ltvPrediction}) DESC NULLS LAST`);
 
-    const data = rows.map(r => {
-      const source = r.source ?? "other";
-      const avgLtv = Math.round(r.avgLtv ?? 0);
-      const cac = Math.round(avgLtv * (CAC_MULTIPLIER[source] ?? 0.01));
-      const conversionRate = r.totalLeads > 0
-        ? Math.round((r.wonLeads / r.totalLeads) * 1000) / 10
-        : 0;
-      const projectedRoi = cac > 0
-        ? Math.round(((avgLtv - cac) / cac) * 100 * 10) / 10
-        : 0;
+    // ── 2. Real budget per channel from obtain_campaigns ─────────────────────
+    const budgetRows = await db.select({
+      channel:    obtainCampaigns.channel,
+      totalBudget: sql<number>`coalesce(sum(${obtainCampaigns.budget}), 0)::real`,
+      hasBudget:   sql<number>`count(case when ${obtainCampaigns.budget} is not null then 1 end)::int`,
+    }).from(obtainCampaigns)
+      .where(eq(obtainCampaigns.tenantId, tenantId))
+      .groupBy(obtainCampaigns.channel);
 
-      const roiStatus = projectedRoi > 500 ? "excellent"
+    const budgetMap = Object.fromEntries(
+      budgetRows.map(r => [r.channel, { totalBudget: r.totalBudget, hasBudget: r.hasBudget > 0 }]),
+    );
+
+    // ── 3. Retain bridge: verified LTV + post-sale churn per source ───────────
+    const bridge = await resolveWonLeadCustomerLinks(tenantId);
+
+    // ── 4. Assemble per-channel data ──────────────────────────────────────────
+    const data = leadRows.map(r => {
+      const source   = r.source ?? "other";
+      const avgLtvPredicted = Math.round(r.avgLtvPredicted ?? 0);
+      const conversionRate  = r.totalLeads > 0
+        ? Math.round((r.wonLeads / r.totalLeads) * 1000) / 10 : 0;
+
+      // Budget-based CAC (null when no budget imported)
+      const budget   = budgetMap[source];
+      const cac: number | null = budget?.hasBudget && r.wonLeads > 0
+        ? Math.round(budget.totalBudget / r.wonLeads)
+        : null;
+
+      // Retain-verified LTV
+      const srcBridge = bridge.bySource.get(source);
+      const avgLtvVerified    = srcBridge?.avgLtvVerified    ?? null;
+      const verifiedSampleSize = srcBridge?.verifiedSampleSize ?? 0;
+      const avgTenureDays      = srcBridge?.avgTenureDays     ?? 0;
+      const wonCustomersHealthy  = srcBridge?.healthyCount    ?? 0;
+      const wonCustomersAtRisk   = srcBridge?.atRiskCount     ?? 0;
+      const wonCustomersChurned  = srcBridge?.churnedCount    ?? 0;
+      const postSaleChurnRate    = srcBridge?.postSaleChurnRate ?? 0;
+      const ltvChurnAdjusted     = srcBridge?.ltvChurnAdjusted ?? null;
+
+      // Effective LTV: verified (if enough sample) else predicted
+      const effectiveLtv = verifiedSampleSize >= 3 ? (avgLtvVerified ?? avgLtvPredicted) : avgLtvPredicted;
+
+      // ROI (null when no real CAC)
+      const projectedRoi: number | null = cac && cac > 0
+        ? Math.round(((effectiveLtv - cac) / cac) * 100 * 10) / 10 : null;
+
+      const paybackDays: number | null = cac && avgTenureDays > 0 && effectiveLtv > 0
+        ? Math.round(cac / (effectiveLtv / Math.max(avgTenureDays, 1)) )
+        : null;
+
+      const roiStatus = projectedRoi == null ? null
+        : projectedRoi > 500 ? "excellent"
         : projectedRoi > 200 ? "good"
         : projectedRoi > 50  ? "neutral"
         : "poor";
@@ -1014,10 +1154,21 @@ obtainRouter.get("/campaigns", async (req, res) => {
         totalLeads: r.totalLeads,
         wonLeads: r.wonLeads,
         conversionRate,
-        avgLtv,
+        avgLtvPredicted,
+        avgLtvVerified: verifiedSampleSize >= 3 ? avgLtvVerified : null,
+        verifiedSampleSize,
         cac,
+        budgetSource: budget?.hasBudget ? "imported" : null,
         projectedRoi,
+        paybackDays,
         roiStatus,
+        wonCustomersHealthy,
+        wonCustomersAtRisk,
+        wonCustomersChurned,
+        postSaleChurnRate,
+        ltvChurnAdjusted,
+        // Legacy compat field (used by existing code)
+        avgLtv: effectiveLtv,
       };
     });
 
@@ -1088,6 +1239,57 @@ obtainRouter.get("/uploads", async (req, res) => {
   }
 });
 
+// ─── GET /snapshots ───────────────────────────────────────────────────────────
+// Returns per-upload KPI snapshots ordered by upload date — used by the
+// "Evolução" timeline in the Obtain uploads page.
+obtainRouter.get("/snapshots", async (req, res) => {
+  try {
+    const tenantId = req.tenantId!;
+
+    const uploads = await db.select().from(obtainUploads)
+      .where(eq(obtainUploads.tenantId, tenantId))
+      .orderBy(asc(obtainUploads.uploadedAt));
+
+    if (uploads.length === 0) return res.json([]);
+
+    const snapshots = await Promise.all(uploads.map(async (u) => {
+      const [stats] = await db.select({
+        total:       sql<number>`count(*)::int`,
+        won:         sql<number>`count(*) filter (where ${leads.status} = 'won')::int`,
+        hot:         sql<number>`count(*) filter (where ${obtainScores.riskTier} = 'hot')::int`,
+        avgLtv:      sql<number>`round(avg(${obtainScores.ltvPrediction})::numeric, 0)`,
+        avgScore:    sql<number>`round(avg(${obtainScores.score})::numeric, 1)`,
+        avgConvProb: sql<number>`round(avg(${obtainScores.conversionProbability})::numeric, 3)`,
+      }).from(leads)
+        .leftJoin(obtainScores, eq(obtainScores.leadId, leads.id))
+        .where(and(
+          eq(leads.tenantId, tenantId),
+          eq(leads.sourceUploadId, u.id),
+        ));
+
+      const total = stats?.total ?? 0;
+      return {
+        uploadId:        u.id,
+        uploadedAt:      u.uploadedAt,
+        filename:        u.filename,
+        leadCount:       total,
+        wonCount:        stats?.won ?? 0,
+        conversionRate:  total > 0 ? Math.round(((stats?.won ?? 0) / total) * 1000) / 10 : 0,
+        hotCount:        stats?.hot ?? 0,
+        hotPct:          total > 0 ? Math.round(((stats?.hot ?? 0) / total) * 1000) / 10 : 0,
+        avgLtvPrediction: stats?.avgLtv ?? 0,
+        avgScore:        stats?.avgScore ?? 0,
+        avgConversionProb: stats?.avgConvProb ?? 0,
+      };
+    }));
+
+    res.json(snapshots);
+  } catch (err) {
+    console.error("Obtain snapshots error:", err);
+    res.status(500).json({ error: "Erro ao buscar snapshots" });
+  }
+});
+
 // ─── DELETE /uploads/:id ─────────────────────────────────────────────────────
 // Removes upload audit row plus every lead/score stamped with this uploadId.
 // Leads with NULL sourceUploadId (pre-migration) are untouched.
@@ -1149,6 +1351,18 @@ obtainRouter.delete("/uploads/:id", async (req, res) => {
 
       await tx.delete(obtainUploads)
         .where(and(eq(obtainUploads.id, uploadId), eq(obtainUploads.tenantId, tenantId)));
+
+      // If no leads remain for this tenant, clear all derived/aggregate tables
+      // that don't carry sourceUploadId and would otherwise show stale data.
+      const [remaining] = await tx
+        .select({ count: sql<number>`count(*)::int` })
+        .from(leads)
+        .where(eq(leads.tenantId, tenantId));
+      if ((remaining?.count ?? 0) === 0) {
+        await tx.delete(obtainIcpClusters).where(eq(obtainIcpClusters.tenantId, tenantId));
+        await tx.delete(obtainFunnelMetrics).where(eq(obtainFunnelMetrics.tenantId, tenantId));
+        await tx.delete(obtainCampaignRoi).where(eq(obtainCampaignRoi.tenantId, tenantId));
+      }
 
       return {
         scores: delScores.length,

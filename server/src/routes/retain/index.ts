@@ -12,7 +12,7 @@ import { eq, and, desc, asc, ilike, sql, inArray, SQL } from "drizzle-orm";
 import {
   customers, retainPredictions, retainChurnCauses, retainAnalytics,
   retainActions, retainUploads, retainAlerts, customerScoreHistory,
-  customerNotes,
+  customerNotes, obtainIcpClusters,
 } from "../../../../shared/schema.js";
 import {
   runRetainPredictions,
@@ -92,7 +92,7 @@ retainRouter.get("/dashboard", async (req, res) => {
     const [snapshots, alertCustomers, riskRows] = await Promise.all([
       db.select().from(retainAnalytics)
         .where(eq(retainAnalytics.tenantId, tenantId))
-        .orderBy(desc(retainAnalytics.snapshotDate)).limit(2),
+        .orderBy(desc(retainAnalytics.snapshotDate)).limit(6),
       db.select().from(customers)
         .where(and(
           eq(customers.tenantId, tenantId),
@@ -125,7 +125,14 @@ retainRouter.get("/dashboard", async (req, res) => {
     riskRows.forEach(r => { if (r.riskLevel) riskDistribution[r.riskLevel] = r.count; });
 
     const mrr = latest?.mrr ?? 0;
-    const churnRateDecimal = (latest?.churnRate ?? 0) / 100;
+    // Use average of non-zero historical rates so a recent 0% snapshot doesn't flatten the projection
+    const nonZeroRates = snapshots
+      .map(s => parseFloat(String(s.churnRate ?? 0)))
+      .filter(r => r > 0);
+    const avgChurnRate = nonZeroRates.length > 0
+      ? nonZeroRates.reduce((a, b) => a + b, 0) / nonZeroRates.length
+      : 0;
+    const churnRateDecimal = avgChurnRate / 100;
     // 3 monthly projection scenarios
     const months = [1, 2, 3];
     const revenueProjection = {
@@ -542,16 +549,29 @@ retainRouter.get("/analytics/trend", async (req, res) => {
       .orderBy(asc(retainAnalytics.snapshotDate));
 
     const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
-    const data = rows.map(r => {
-      const d = new Date(r.snapshotDate);
-      const month = `${monthNames[d.getMonth()]}/${String(d.getFullYear()).slice(2)}`;
+
+    // Deduplicate: keep only the latest snapshot per calendar month, then limit to 12
+    // Use string slicing to avoid timezone issues with new Date() parsing
+    const byMonth = new Map<string, typeof rows[0]>();
+    for (const r of rows) {
+      const dateStr = String(r.snapshotDate).slice(0, 10); // "YYYY-MM-DD"
+      const [year, mon] = dateStr.split("-");
+      const key = `${year}-${mon}`;
+      byMonth.set(key, r); // rows are asc by date, so last write per key = most recent of the month
+    }
+    const deduped = Array.from(byMonth.values()).slice(-12);
+
+    const data = deduped.map(r => {
+      const dateStr = String(r.snapshotDate).slice(0, 10);
+      const [year, mon] = dateStr.split("-");
+      const month = `${monthNames[parseInt(mon, 10) - 1]}/${year.slice(2)}`;
       return {
         month,
         totalCustomers: r.totalCustomers,
         activeCustomers: r.activeCustomers,
         churnedCustomers: r.churnedCustomers,
         atRiskCustomers: r.atRiskCustomers,
-        churn: parseFloat(String(r.churnRate ?? 0)),   // dataKey used by ChurnTrendChart
+        churn: parseFloat(String(r.churnRate ?? 0)),
         churnRate: parseFloat(String(r.churnRate ?? 0)),
         mrr: r.mrr,
         revenueAtRisk: r.revenueAtRisk,
@@ -599,6 +619,56 @@ retainRouter.get("/uploads", async (req, res) => {
   } catch (err) {
     console.error("Retain uploads error:", err);
     res.status(500).json({ error: "Erro ao buscar uploads" });
+  }
+});
+
+// ─── GET /snapshots ───────────────────────────────────────────────────────────
+// Returns per-upload KPI snapshots ordered by upload date — used by the
+// "Evolução" timeline in the Retain uploads page.
+retainRouter.get("/snapshots", async (req, res) => {
+  try {
+    const tenantId = req.tenantId!;
+
+    const uploads = await db.select().from(retainUploads)
+      .where(eq(retainUploads.tenantId, tenantId))
+      .orderBy(asc(retainUploads.uploadedAt));
+
+    if (uploads.length === 0) return res.json([]);
+
+    const snapshots = await Promise.all(uploads.map(async (u) => {
+      const [stats] = await db.select({
+        total:         sql<number>`count(*)::int`,
+        churned:       sql<number>`count(*) filter (where ${customers.status} = 'churned')::int`,
+        atRisk:        sql<number>`count(*) filter (where ${customers.status} = 'at_risk')::int`,
+        avgHealth:     sql<number>`round(avg(${customers.healthScore})::numeric, 1)`,
+        totalRevenue:  sql<number>`coalesce(sum(${customers.dimRevenue}), 0)`,
+        avgChurnProb:  sql<number>`round(avg(${customers.churnProbability})::numeric, 3)`,
+      }).from(customers)
+        .where(and(
+          eq(customers.tenantId, tenantId),
+          eq(customers.sourceUploadId, u.id),
+        ));
+
+      const total = stats?.total ?? 0;
+      return {
+        uploadId:        u.id,
+        uploadedAt:      u.uploadedAt,
+        filename:        u.filename,
+        customerCount:   total,
+        avgHealthScore:  stats?.avgHealth ?? 0,
+        churnCount:      stats?.churned ?? 0,
+        churnRate:       total > 0 ? Math.round(((stats?.churned ?? 0) / total) * 1000) / 10 : 0,
+        atRiskCount:     stats?.atRisk ?? 0,
+        atRiskPct:       total > 0 ? Math.round(((stats?.atRisk ?? 0) / total) * 1000) / 10 : 0,
+        totalRevenue:    stats?.totalRevenue ?? 0,
+        avgChurnProb:    stats?.avgChurnProb ?? 0,
+      };
+    }));
+
+    res.json(snapshots);
+  } catch (err) {
+    console.error("Retain snapshots error:", err);
+    res.status(500).json({ error: "Erro ao buscar snapshots" });
   }
 });
 
@@ -671,6 +741,20 @@ retainRouter.delete("/uploads/:id", async (req, res) => {
 
       await tx.delete(retainUploads)
         .where(and(eq(retainUploads.id, uploadId), eq(retainUploads.tenantId, tenantId)));
+
+      // If no customers remain for this tenant, clear all derived/aggregate tables
+      // that don't carry sourceUploadId and would otherwise show stale data.
+      const [remaining] = await tx
+        .select({ count: sql<number>`count(*)::int` })
+        .from(customers)
+        .where(eq(customers.tenantId, tenantId));
+      if ((remaining?.count ?? 0) === 0) {
+        await tx.delete(retainAnalytics).where(eq(retainAnalytics.tenantId, tenantId));
+        await tx.delete(retainChurnCauses).where(eq(retainChurnCauses.tenantId, tenantId));
+        // ICP clusters require customers (Retain) + leads (Obtain). With no customers
+        // the clusters are meaningless — clear them so the Obtain ICP page shows empty state.
+        await tx.delete(obtainIcpClusters).where(eq(obtainIcpClusters.tenantId, tenantId));
+      }
 
       return {
         alerts: delAlerts.length,

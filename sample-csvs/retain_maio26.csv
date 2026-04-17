@@ -1,0 +1,18 @@
+customerCode,name,email,segment,revenue,tenureDays,paymentRegularity,usageIntensity,satisfaction,supportVolume,contractRemainingDays,city,state
+TECH001,TechBrazil Sistemas SA,joao.silva@techbrazil.com.br,Industrial,87000,760,96,90,89,1,150,Goiânia,GO
+CONS001,ConstroBrasil LTDA,maria.santos@constrobrasil.com.br,Construção Civil,43000,395,79,64,70,5,365,Brasília,DF
+AGRO001,AgroMinas Equipamentos,pedro.costa@agrominas.com.br,Agropecuária,122000,1125,98,92,94,1,335,Uberlândia,MG
+MIN001,Mineração Alto Paranaíba,carlos.lima@altopa.com.br,Mineração,185000,570,74,58,56,9,365,Patos de Minas,MG
+IND001,Metalúrgica São Paulo ME,ana.ferreira@metsp.com.br,Industrial,28000,210,18,12,9,45,0,São Paulo,SP
+AGR002,Fazenda Progresso SA,marcos.oliveira@fprogresso.com.br,Agropecuária,69000,850,90,80,83,3,210,Barreiras,BA
+CON002,Incorporadora Cerrado LTDA,lucia.dias@incercerr.com.br,Construção Civil,53000,300,40,28,33,24,30,Goiânia,GO
+MIN002,Extração Mineral GO,roberto.souza@extmin.com.br,Mineração,97000,1490,93,85,89,2,690,Catalão,GO
+IND002,Distribuidora Industrial Brasília,fernanda.silva@dibrasilia.com.br,Industrial,31000,150,8,5,5,62,0,Brasília,DF
+SER001,Logística Planalto SA,thiago.campos@logplanalto.com.br,Outros,48000,630,52,40,38,22,120,Anápolis,GO
+AGR003,Cooperativa Grãos do Centro,juliana.neves@coopergraos.com.br,Agropecuária,148000,940,97,91,92,2,420,Luziânia,GO
+CON003,Construtora Planalto LTDA,rafael.santos@constplanalto.com.br,Construção Civil,39000,120,5,3,3,75,0,Luziânia,GO
+IND003,Indústria Química Central,beatriz.alves@iqcentral.com.br,Industrial,75000,1125,92,88,91,2,335,Anápolis,GO
+MIN003,Garimpo Tecnológico ME,diego.martins@gtecno.com.br,Mineração,19000,480,60,43,45,15,60,Caldas Novas,GO
+SER002,Transportadora Regional GO,camila.ribeiro@transreg.com.br,Outros,35000,360,80,68,74,4,90,Rio Verde,GO
+SID001,Siderúrgica Centro-Oeste SA,rodrigo.mendes@sidercentro.com.br,Industrial,95000,15,92,78,82,1,365,Goiânia,GO
+FRI001,Frigorífico Nacional SA,patricia.lima@frinacional.com.br,Agropecuária,78000,20,89,73,79,2,365,Rio Verde,GO

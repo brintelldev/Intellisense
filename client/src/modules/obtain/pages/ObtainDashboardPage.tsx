@@ -35,7 +35,7 @@ export default function ObtainDashboardPage() {
 
   const kpis = dashData?.kpis;
   const campaigns = apiCampaigns ?? [];
-  const funnelStages = apiFunnel ?? [];
+  const funnelStages = apiFunnel?.stages ?? [];
 
   if (!kpis) {
     return (

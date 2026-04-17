@@ -37,9 +37,9 @@ export function ChurnTrendChart({ data: rawData }: Props) {
   }
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+    <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden flex flex-col">
       {header}
-      <div className="p-5">
+      <div className="p-5 flex-1 flex items-center">
       <ResponsiveContainer width="100%" height={220}>
         <AreaChart data={data} margin={{ top: 5, right: 10, bottom: 0, left: -10 }}>
           <defs>

@@ -46,7 +46,12 @@ export async function generateIcpClusters(tenantId: string): Promise<{
     .leftJoin(obtainScores, eq(obtainScores.leadId, leads.id))
     .where(eq(leads.tenantId, tenantId));
 
-  if (allCustomers.length === 0 && allLeadsWithScores.length === 0) {
+  // Require BOTH customers (Retain) AND leads (Obtain) to generate meaningful ICP clusters.
+  // With only one side, the clustering would produce misleading profiles: no conversion data
+  // without leads, and no health/churn data without customers.
+  if (allCustomers.length === 0 || allLeadsWithScores.length === 0) {
+    // Clear any stale clusters so the ICP page shows an empty state.
+    await db.delete(obtainIcpClusters).where(eq(obtainIcpClusters.tenantId, tenantId));
     return { clustersGenerated: 0 };
   }
 
