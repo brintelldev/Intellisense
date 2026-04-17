@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, Component, ReactNode } from "react";
 import { useLocation } from "wouter";
 import { ICPHeroCard } from "../components/ICPHeroCard";
 import { ICPPriorityMatrix } from "../components/ICPPriorityMatrix";
@@ -6,6 +6,22 @@ import { ClusterRadarChart } from "../components/ClusterRadarChart";
 import { EmptyState } from "../../../shared/components/EmptyState";
 import { LoadingState } from "../../../shared/components/LoadingState";
 import { useObtainICPClusters } from "../../../shared/hooks/useObtain";
+
+// Simple error boundary so a chart crash doesn't blank the whole page
+class SafeBlock extends Component<{ children: ReactNode; label?: string }, { error: boolean }> {
+  state = { error: false };
+  static getDerivedStateFromError() { return { error: true }; }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="bg-white rounded-xl border border-slate-100 p-6 text-center text-xs text-slate-400">
+          {this.props.label ?? "Componente"} não pôde ser renderizado
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const fmtBRL = (v: number) => v >= 1_000_000 ? `R$${(v / 1_000_000).toFixed(1)}M` : `R$${Math.round(v / 1_000)}K`;
 
@@ -195,10 +211,12 @@ export default function ObtainICPPage() {
 
       {/* Row 1 — Hero "Seu Perfil Campeão" */}
       {champion && (
-        <ICPHeroCard
-          cluster={champion}
-          baseline={baseline}
-        />
+        <SafeBlock label="Hero do perfil campeão">
+          <ICPHeroCard
+            cluster={champion}
+            baseline={baseline}
+          />
+        </SafeBlock>
       )}
 
       {/* Row 2 — Priority Matrix + Radar */}
@@ -226,7 +244,9 @@ export default function ObtainICPPage() {
                 </div>
               ))}
             </div>
-            <ICPPriorityMatrix clusters={icpClusters} />
+            <SafeBlock label="Mapa estratégico">
+              <ICPPriorityMatrix clusters={icpClusters} />
+            </SafeBlock>
           </div>
         </div>
 
@@ -244,7 +264,9 @@ export default function ObtainICPPage() {
             </div>
           </div>
           <div className="p-5">
-            <ClusterRadarChart clusters={icpClusters} />
+            <SafeBlock label="Radar comparativo">
+              <ClusterRadarChart clusters={icpClusters} />
+            </SafeBlock>
           </div>
         </div>
       </div>

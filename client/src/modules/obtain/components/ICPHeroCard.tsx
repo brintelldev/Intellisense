@@ -46,7 +46,7 @@ const fmtPct = (v: number) => `${(v * 100).toFixed(1)}%`;
 function downloadLeadsCSV(cluster: IcpCluster) {
   const rows = [
     ["Nome", "Empresa", "Score", "LTV Previsto"],
-    ...cluster.topLeads.map(l => [l.name, l.company ?? "", String(l.score), fmtBRL(l.ltvPrediction)]),
+    ...(cluster.topLeads ?? []).map(l => [l.name, l.company ?? "", String(l.score), fmtBRL(l.ltvPrediction)]),
   ];
   const csv = rows.map(r => r.map(c => `"${c.replace(/"/g, '""')}"`).join(",")).join("\n");
   const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
@@ -61,6 +61,8 @@ function downloadLeadsCSV(cluster: IcpCluster) {
 export function ICPHeroCard({ cluster, baseline }: Props) {
   const [, navigate] = useLocation();
   const industry = cluster.characteristics?.industry as string | undefined;
+  const safeTopLeads: TopLead[] = cluster.topLeads ?? [];
+  const safeTopCustomers: TopCustomer[] = cluster.topCustomers ?? [];
 
   // Contrast multipliers vs baseline
   const ltvMultiple = baseline.avgLtv > 0 ? Math.round((cluster.avgLtv / baseline.avgLtv) * 10) / 10 : null;
@@ -143,11 +145,11 @@ export function ICPHeroCard({ cluster, baseline }: Props) {
         {/* Top leads + top customers */}
         <div className="grid grid-cols-2 gap-4">
           {/* Top leads */}
-          {cluster.topLeads.length > 0 && (
+          {safeTopLeads.length > 0 && (
             <div>
               <p className="text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">Principais leads</p>
               <div className="flex flex-wrap gap-1.5">
-                {cluster.topLeads.map(lead => (
+                {safeTopLeads.map(lead => (
                   <span
                     key={lead.id}
                     className="text-xs bg-[#10B981]/10 text-[#10B981] border border-[#10B981]/20 px-2.5 py-1 rounded-full font-medium cursor-pointer hover:bg-[#10B981]/20 transition-colors"
@@ -162,11 +164,11 @@ export function ICPHeroCard({ cluster, baseline }: Props) {
           )}
 
           {/* Top customers */}
-          {cluster.topCustomers.length > 0 && (
+          {safeTopCustomers.length > 0 && (
             <div>
               <p className="text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">Clientes ativos</p>
               <div className="flex flex-wrap gap-1.5">
-                {cluster.topCustomers.map(cust => (
+                {safeTopCustomers.map(cust => (
                   <span
                     key={cust.id}
                     className="text-xs bg-[#293b83]/10 text-[#293b83] border border-[#293b83]/20 px-2.5 py-1 rounded-full font-medium cursor-pointer hover:bg-[#293b83]/20 transition-colors"
@@ -209,9 +211,9 @@ export function ICPHeroCard({ cluster, baseline }: Props) {
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-2 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
             </svg>
-            Ver clientes ({cluster.topCustomers.length > 0 ? cluster.characteristics?.customerCount ?? "—" : "—"})
+            Ver clientes ({safeTopCustomers.length > 0 ? cluster.characteristics?.customerCount ?? "—" : "—"})
           </button>
-          {cluster.topLeads.length > 0 && (
+          {safeTopLeads.length > 0 && (
             <button
               onClick={() => downloadLeadsCSV(cluster)}
               className="flex items-center justify-center gap-1.5 h-9 px-3 border border-slate-200 text-slate-600 text-xs font-medium rounded-lg hover:bg-slate-50 transition-colors"
