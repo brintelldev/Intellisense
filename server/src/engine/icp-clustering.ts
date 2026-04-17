@@ -144,37 +144,24 @@ export async function generateIcpClusters(tenantId: string): Promise<{
   // Sort by composite score
   scoredProfiles.sort((a, b) => b.composite - a.composite);
 
-  // Classify
+  // Classify using forced tertile distribution when N >= 3
+  // This ensures visible tier diversity regardless of how close composite scores are
   const classified: Array<{ profile: ClusterProfile & { composite: number }; type: ClusterType }> = [];
+  const n = scoredProfiles.length;
 
-  for (let i = 0; i < scoredProfiles.length; i++) {
-    const p = scoredProfiles[i];
-    let type: ClusterType;
-
-    if (p.composite >= 0.6 || i === 0) {
-      type = "ideal";
-    } else if (p.composite >= 0.35 || p.churnRate < 0.3) {
-      type = "good";
-    } else {
-      type = "anti";
+  if (n >= 3) {
+    // Tertile: top 1/3 = ideal, middle 1/3 = good, bottom 1/3 = anti
+    const topCut = Math.ceil(n / 3);
+    const midCut = Math.ceil(n * 2 / 3);
+    for (let i = 0; i < n; i++) {
+      const type: ClusterType = i < topCut ? "ideal" : i < midCut ? "good" : "anti";
+      classified.push({ profile: scoredProfiles[i], type });
     }
-
-    classified.push({ profile: p, type });
-  }
-
-  // Ensure at least one of each type if we have enough data
-  if (classified.length >= 3) {
-    const hasIdeal = classified.some((c) => c.type === "ideal");
-    const hasGood = classified.some((c) => c.type === "good");
-    const hasAnti = classified.some((c) => c.type === "anti");
-
-    if (!hasAnti) {
-      classified[classified.length - 1].type = "anti";
-    }
-    if (!hasGood && classified.length > 2) {
-      const midIdx = Math.floor(classified.length / 2);
-      classified[midIdx].type = "good";
-    }
+  } else if (n === 2) {
+    classified.push({ profile: scoredProfiles[0], type: "ideal" });
+    classified.push({ profile: scoredProfiles[1], type: "anti" });
+  } else if (n === 1) {
+    classified.push({ profile: scoredProfiles[0], type: "ideal" });
   }
 
   // Delete existing clusters for tenant

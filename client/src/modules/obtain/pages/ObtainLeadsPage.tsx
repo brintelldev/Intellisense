@@ -1,5 +1,5 @@
-import { useState, useMemo } from "react";
-import { useLocation } from "wouter";
+import { useState, useMemo, useEffect } from "react";
+import { useLocation, useSearch } from "wouter";
 import { DataTable, ColumnDef } from "../../../shared/components/DataTable";
 import { ScoreBadge } from "../../../shared/components/ScoreBadge";
 import { Progress } from "../../../shared/components/ui/progress";
@@ -16,6 +16,7 @@ interface Filters {
   status: LeadStatus | "all";
   source: string;
   icpCluster: string;
+  industry: string;
   minScore: number;
   onlyToday: boolean;
 }
@@ -91,12 +92,23 @@ const COLUMNS: ColumnDef<Lead>[] = [
 ];
 
 export default function ObtainLeadsPage() {
+  const urlSearch = useSearch();
   const [filters, setFilters] = useState<Filters>({
     search: "", scoreTier: "all", status: "all", source: "all",
-    icpCluster: "all", minScore: 0, onlyToday: false,
+    icpCluster: "all", industry: "all", minScore: 0, onlyToday: false,
   });
   const [selected, setSelected] = useState<Lead | null>(null);
   const [, navigate] = useLocation();
+
+  // Apply URL params on mount — supports ?industry=X from ICP page CTAs
+  useEffect(() => {
+    const params = new URLSearchParams(urlSearch);
+    const industryParam = params.get("industry");
+    if (industryParam) {
+      setFilters(f => ({ ...f, industry: industryParam }));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const { data: apiLeadsData, isLoading } = useObtainLeads({
     scoreTier: filters.scoreTier !== "all" ? filters.scoreTier : undefined,
@@ -113,6 +125,7 @@ export default function ObtainLeadsPage() {
       if (filters.status !== "all" && l.status !== filters.status) return false;
       if (filters.source !== "all" && l.source !== filters.source) return false;
       if (filters.icpCluster !== "all" && (l as any).icpCluster !== filters.icpCluster) return false;
+      if (filters.industry !== "all" && (l as any).industry?.toLowerCase() !== filters.industry.toLowerCase()) return false;
       if (filters.minScore > 0 && (l as any).score < filters.minScore) return false;
       if (filters.onlyToday && !priorityLeadIds.has(l.id)) return false;
       if (filters.search) {
@@ -139,9 +152,20 @@ export default function ObtainLeadsPage() {
 
   return (
     <div className="space-y-4 w-full">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         <h1 className="text-2xl font-bold text-slate-900">Leads & Scoring</h1>
         <span className="text-xs font-semibold bg-[#10B981]/10 text-[#10B981] px-2.5 py-1 rounded-full">Obtain Sense</span>
+        {filters.industry !== "all" && (
+          <span className="flex items-center gap-1.5 text-xs bg-[#10B981]/10 text-[#10B981] border border-[#10B981]/20 px-2.5 py-1 rounded-full font-medium">
+            Perfil: {filters.industry}
+            <button
+              onClick={() => setFilters(f => ({ ...f, industry: "all" }))}
+              className="hover:text-[#0ea572] ml-0.5"
+            >
+              ×
+            </button>
+          </span>
+        )}
         <span className="ml-auto text-sm text-slate-500">{filtered.length} leads encontrados</span>
       </div>
 

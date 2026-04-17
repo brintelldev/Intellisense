@@ -685,21 +685,136 @@ obtainRouter.get("/leads/:id", async (req, res) => {
 // ─── GET /icp-clusters ───────────────────────────────────────────────────────
 obtainRouter.get("/icp-clusters", async (req, res) => {
   try {
+    const tenantId = req.tenantId!;
     const rows = await db.select().from(obtainIcpClusters)
-      .where(eq(obtainIcpClusters.tenantId, req.tenantId!))
+      .where(eq(obtainIcpClusters.tenantId, tenantId))
       .orderBy(asc(obtainIcpClusters.clusterId));
 
     // Compute budgetShare (fraction of total customers in this cluster)
-    const totalCustomers = rows.reduce((sum, r) => sum + ((r.characteristics as any)?.customerCount ?? 0), 0);
-    const data = rows.map(r => {
+    const totalCustomersCount = rows.reduce((sum, r) => sum + ((r.characteristics as any)?.customerCount ?? 0), 0);
+
+    // Rank by composite score
+    const sorted = [...rows].sort((a, b) => {
+      const ca = (a.characteristics as any)?.composite ?? 0;
+      const cb = (b.characteristics as any)?.composite ?? 0;
+      return cb - ca;
+    });
+    const rankMap = new Map(sorted.map((r, i) => [r.id, i + 1]));
+
+    const CHANNEL_LABELS_ICP: Record<string, string> = {
+      referral: "Indicação", event: "Feira/Evento", paid_social: "LinkedIn Ads",
+      paid_search: "Google Ads", outbound: "Outbound", organic: "Orgânico",
+      email: "Email", csv: "CSV", manual: "Manual", other: "Outros",
+    };
+
+    const data = await Promise.all(rows.map(async (r) => {
       const chars = (r.characteristics as any) ?? {};
+      const industry = chars.industry as string | undefined;
       const customerCount = chars.customerCount ?? 0;
-      const budgetShare = totalCustomers > 0 ? customerCount / totalCustomers : 0;
+      const budgetShare = totalCustomersCount > 0 ? customerCount / totalCustomersCount : 0;
+      const rank = rankMap.get(r.id) ?? 99;
+      const type = chars.type ?? (r.isIdeal ? "ideal" : "anti");
+
+      // ── Top 3 leads from this industry ──────────────────────────────────
+      let topLeads: any[] = [];
+      let dominantSource: string | null = null;
+      if (industry) {
+        const leadRows = await db.select({
+          id: leads.id,
+          name: leads.name,
+          company: leads.company,
+          score: obtainScores.score,
+          ltvPrediction: obtainScores.ltvPrediction,
+        }).from(leads)
+          .leftJoin(obtainScores, eq(obtainScores.leadId, leads.id))
+          .where(and(
+            eq(leads.tenantId, tenantId),
+            sql`lower(${leads.industry}) = lower(${industry})`,
+          ))
+          .orderBy(desc(obtainScores.score))
+          .limit(3);
+
+        topLeads = leadRows.map(l => ({
+          id: l.id,
+          name: l.name,
+          company: l.company,
+          score: l.score ?? 0,
+          ltvPrediction: l.ltvPrediction ?? 0,
+        }));
+
+        // Dominant source
+        const [sourceRow] = await db.select({
+          source: leads.source,
+          count: sql<number>`count(*)::int`,
+        }).from(leads)
+          .where(and(
+            eq(leads.tenantId, tenantId),
+            sql`lower(${leads.industry}) = lower(${industry})`,
+          ))
+          .groupBy(leads.source)
+          .orderBy(sql`count(*) DESC`)
+          .limit(1);
+
+        if (sourceRow?.source) {
+          dominantSource = CHANNEL_LABELS_ICP[sourceRow.source] ?? sourceRow.source;
+        }
+      }
+
+      // ── Top 3 customers + avgTicket ─────────────────────────────────────
+      let topCustomers: any[] = [];
+      let avgTicket = 0;
+      if (industry) {
+        const custRows = await db.select({
+          id: customers.id,
+          name: customers.name,
+          mrr: customers.dimRevenue,
+          healthScore: customers.healthScore,
+        }).from(customers)
+          .where(and(
+            eq(customers.tenantId, tenantId),
+            sql`lower(${customers.segment}) = lower(${industry})`,
+            sql`${customers.status} != 'churned'`,
+          ))
+          .orderBy(desc(customers.healthScore))
+          .limit(3);
+
+        topCustomers = custRows.map(c => ({
+          id: c.id,
+          name: c.name,
+          mrr: c.mrr ?? 0,
+          healthScore: c.healthScore ?? 0,
+        }));
+
+        const [ticketRow] = await db.select({
+          avg: sql<number>`coalesce(avg(${customers.dimRevenue}), 0)::real`,
+        }).from(customers)
+          .where(and(
+            eq(customers.tenantId, tenantId),
+            sql`lower(${customers.segment}) = lower(${industry})`,
+            sql`${customers.status} != 'churned'`,
+          ));
+        avgTicket = Math.round(ticketRow?.avg ?? 0);
+      }
+
+      // ── Insight text ────────────────────────────────────────────────────
+      const ltvFmt = (v: number) => v >= 1_000_000 ? `R$${(v/1_000_000).toFixed(1)}M` : `R$${Math.round(v/1_000)}K`;
+      let insight = "";
+      const churnPct = ((r.churnRate30d ?? 0) * 100).toFixed(0);
+      if (type === "ideal") {
+        insight = `Maior retorno da base — LTV ${ltvFmt(r.averageLtv ?? 0)}, churn ${churnPct}%/mês. Escalar aquisição neste perfil.`;
+      } else if (type === "good") {
+        insight = `Bom potencial — LTV ${ltvFmt(r.averageLtv ?? 0)}, oportunidade de otimização em conversão e retenção.`;
+      } else {
+        insight = `Baixo retorno — churn ${churnPct}%/mês e LTV ${ltvFmt(r.averageLtv ?? 0)}. Reduzir orçamento neste perfil.`;
+      }
+
       return {
         id: r.id,
+        clusterId: r.clusterId,
         name: r.clusterName,
         description: r.description,
-        type: chars.type ?? (r.isIdeal ? "ideal" : "anti"),
+        type,
+        rank,
         avgLtv: r.averageLtv,
         avgCac: r.averageCac ?? 0,
         avgConversionRate: r.averageConversionRate ?? 0,
@@ -708,8 +823,17 @@ obtainRouter.get("/icp-clusters", async (req, res) => {
         leadsInFunnel: chars.leadCount ?? 0,
         budgetShare,
         characteristics: r.characteristics,
+        // Enriched fields
+        topLeads,
+        topCustomers,
+        dominantSource,
+        avgTicket,
+        insight,
       };
-    });
+    }));
+
+    // Return sorted by rank
+    data.sort((a, b) => a.rank - b.rank);
     res.json(data);
   } catch (err) {
     console.error("Obtain ICP clusters error:", err);
