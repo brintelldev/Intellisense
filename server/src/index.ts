@@ -10,6 +10,7 @@ import { tenantsRouter } from "./routes/tenants.js";
 import { seedRouter } from "./routes/seed.js";
 import { scoringRouter } from "./routes/scoring.js";
 import { lifecycleRouter } from "./routes/lifecycle.js";
+import { chatRouter } from "./routes/chat.js";
 import { authMiddleware } from "./middleware/auth.js";
 import { tenantMiddleware } from "./middleware/tenant.js";
 
@@ -72,6 +73,7 @@ app.use("/api/tenants", authMiddleware, tenantsRouter);
 app.use("/api/retain", authMiddleware, tenantMiddleware, retainRouter);
 app.use("/api/obtain", authMiddleware, tenantMiddleware, obtainRouter);
 app.use("/api/lifecycle", authMiddleware, tenantMiddleware, lifecycleRouter);
+app.use("/api/chat", authMiddleware, tenantMiddleware, chatRouter);
 app.use("/api", authMiddleware, tenantMiddleware, scoringRouter);
 
 // Error handler

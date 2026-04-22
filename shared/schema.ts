@@ -495,6 +495,44 @@ export const columnMappingTemplates = pgTable("column_mapping_templates", {
 });
 
 // ============================================================
+// CHAT (Assistente Conversacional)
+// ============================================================
+
+export const chatMessageRoleEnum = pgEnum("chat_message_role", ["user", "assistant", "tool"]);
+
+export const chatConversations = pgTable("chat_conversations", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
+  userId: uuid("user_id").references(() => users.id).notNull(),
+  title: varchar("title", { length: 255 }).notNull().default("Nova conversa"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => ({
+  tenantIdx: index("chat_conversations_tenant_idx").on(t.tenantId),
+  userIdx: index("chat_conversations_user_idx").on(t.userId),
+  updatedIdx: index("chat_conversations_updated_idx").on(t.updatedAt),
+}));
+
+export const chatMessages = pgTable("chat_messages", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  conversationId: uuid("conversation_id")
+    .references(() => chatConversations.id, { onDelete: "cascade" })
+    .notNull(),
+  // tenantId denormalizado: garante isolamento rápido em toda query e evita join obrigatório
+  tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
+  role: chatMessageRoleEnum("role").notNull(),
+  content: text("content").notNull(),
+  toolCalls: jsonb("tool_calls").$type<ChatToolCall[]>(),
+  tokensIn: integer("tokens_in"),
+  tokensOut: integer("tokens_out"),
+  model: varchar("model", { length: 100 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => ({
+  conversationIdx: index("chat_messages_conversation_idx").on(t.conversationId),
+  tenantIdx: index("chat_messages_tenant_idx").on(t.tenantId),
+}));
+
+// ============================================================
 // TYPES
 // ============================================================
 
@@ -515,4 +553,13 @@ export interface ShapValue {
   impact: number;
   direction: "positive" | "negative";
   label: string;
+}
+
+export interface ChatToolCall {
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+  result?: unknown;
+  error?: string;
+  durationMs?: number;
 }

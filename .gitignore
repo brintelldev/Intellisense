@@ -26,3 +26,13 @@ testsprite_tests/tmp/
 # Production env files
 .env.prod.local
 .env.production.local
+
+# Claude Code internal
+.claude/
+
+# Word temp lock files
+docs/~$*
+
+# Temp files
+*.json~
+C:Temp*

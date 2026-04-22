@@ -1,6 +1,7 @@
 import { ReactNode } from "react";
 import Sidebar from "./Sidebar";
 import Header from "./Header";
+import ChatLauncher from "./ChatLauncher";
 
 export default function AppShell({ children }: { children: ReactNode }) {
   return (
@@ -12,6 +13,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
           {children}
         </main>
       </div>
+      <ChatLauncher />
     </div>
   );
 }

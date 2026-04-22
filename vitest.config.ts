@@ -5,6 +5,13 @@ import { resolve } from "path";
 process.loadEnvFile(resolve(__dirname, ".env.test"));
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      // Espelha os paths do tsconfig.json para o Vitest conseguir resolver
+      "@shared": resolve(__dirname, "./shared"),
+      "@": resolve(__dirname, "./client/src"),
+    },
+  },
   test: {
     globals: true,
     environment: "node",
