@@ -75,7 +75,7 @@ export function ChatSheet({ open, onClose, pageContext }: ChatSheetProps) {
               className="w-8 h-8 rounded-lg object-contain"
             />
             <div>
-              <h2 className="text-sm font-semibold text-slate-800">IntelliSense Copilot</h2>
+              <h2 className="text-sm font-semibold text-slate-800">Copiloto IntelliSense</h2>
               <p className="text-[11px] text-slate-500">
                 {isStreaming ? "Pensando..." : "Pergunte sobre seus dados"}
               </p>

@@ -38,7 +38,7 @@ export default function ChatLauncher() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8-1.25 0-2.44-.226-3.52-.632L3 21l1.7-4.22C3.62 15.55 3 13.83 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
             </svg>
           </div>
-          <span className="text-sm font-medium">Copilot</span>
+          <span className="text-sm font-medium">Copiloto</span>
           <kbd className="hidden md:inline-flex items-center gap-0.5 text-[10px] font-mono bg-white/15 px-1.5 py-0.5 rounded">
             Ctrl+K
           </kbd>
