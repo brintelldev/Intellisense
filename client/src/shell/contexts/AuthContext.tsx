@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useState, ReactNode } from "react";
+import { createContext, useCallback, useContext, ReactNode } from "react";
 import { useAuth, User, SectorConfig } from "../../shared/hooks/useAuth";
 
 // DCCO demo sectorConfig fallback
@@ -11,21 +11,6 @@ export const DCCO_SECTOR_CONFIG: SectorConfig = {
   tenureLabel: "Tempo de Parceria",
   segments: ["Mineração", "Construção Civil", "Agropecuária", "Industrial"],
   currency: "BRL",
-};
-
-const DEMO_USER: User = {
-  id: "demo",
-  name: "Caio Ferreira",
-  email: "caio@dcco.com.br",
-  role: "admin",
-  tenantId: "demo",
-  tenant: {
-    id: "demo",
-    companyName: "DCCO Distribuição",
-    sector: "industrial_b2b",
-    sectorConfig: DCCO_SECTOR_CONFIG,
-    plan: "enterprise",
-  },
 };
 
 interface AuthContextValue {
@@ -51,27 +36,20 @@ const AuthContext = createContext<AuthContextValue>({
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { data: user, isLoading } = useAuth();
 
-  // Demo mode uses sessionStorage (not localStorage) so it expires when the browser/tab closes.
-  // Users always see the login page on a fresh session.
-  const [demoActive, setDemoActive] = useState(
-    () => typeof window !== "undefined" && sessionStorage.getItem("is-demo") === "true"
-  );
-
   const activateDemo = useCallback(() => {
-    sessionStorage.setItem("is-demo", "true");
-    // Clear any stale localStorage key from older versions
+    // Older builds used client-only demo mode. Clear it so protected API calls
+    // always rely on a real backend session.
+    sessionStorage.removeItem("is-demo");
     localStorage.removeItem("is-demo");
-    setDemoActive(true);
   }, []);
 
   const deactivateDemo = useCallback(() => {
     sessionStorage.removeItem("is-demo");
     localStorage.removeItem("is-demo");
-    setDemoActive(false);
   }, []);
 
-  const isDemoMode = !isLoading && !user && demoActive;
-  const effectiveUser = user ?? (isDemoMode ? DEMO_USER : null);
+  const isDemoMode = false;
+  const effectiveUser = user ?? null;
   const sectorConfig = effectiveUser?.tenant?.sectorConfig ?? DCCO_SECTOR_CONFIG;
 
   return (
