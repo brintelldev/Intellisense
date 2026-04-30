@@ -28,7 +28,7 @@ export default function LoginPage() {
     e.preventDefault();
     try {
       await login.mutateAsync({ email, password, rememberMe });
-      navigate("/", { replace: true });
+      window.location.replace("/");
     } catch {
       // error shown in UI
     }
@@ -42,7 +42,7 @@ export default function LoginPage() {
         password: "Demo@2026",
         rememberMe: true,
       });
-      navigate("/");
+      window.location.replace("/");
     } catch {
       // error shown in UI
     }
