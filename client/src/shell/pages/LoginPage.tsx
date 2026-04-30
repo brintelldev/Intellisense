@@ -13,7 +13,7 @@ export default function LoginPage() {
   const [showRegister, setShowRegister] = useState(false);
   const [, navigate] = useLocation();
   const login = useLogin();
-  const { deactivateDemo, isAuthenticated, isDemoMode } = useAuthContext();
+  const { isAuthenticated, isDemoMode } = useAuthContext();
 
   // Redirect after real login (not demo mode).
   useEffect(() => {
@@ -28,20 +28,6 @@ export default function LoginPage() {
     e.preventDefault();
     try {
       await login.mutateAsync({ email, password, rememberMe });
-      window.location.replace("/");
-    } catch {
-      // error shown in UI
-    }
-  };
-
-  const handleDemo = async () => {
-    try {
-      deactivateDemo();
-      await login.mutateAsync({
-        email: "demo@dcco.com.br",
-        password: "Demo@2026",
-        rememberMe: true,
-      });
       window.location.replace("/");
     } catch {
       // error shown in UI
@@ -136,15 +122,6 @@ export default function LoginPage() {
             {login.isPending ? "Entrando..." : "Entrar"}
           </button>
         </form>
-
-        {/* Demo button */}
-        <button
-          onClick={handleDemo}
-          disabled={login.isPending}
-          className="w-full h-11 bg-slate-100 text-slate-600 font-medium rounded-lg hover:bg-slate-200 transition-colors text-sm"
-        >
-          {login.isPending ? "Entrando..." : "▶ Entrar como Demo (DCCO)"}
-        </button>
 
         {/* Separator */}
         <div className="relative">
