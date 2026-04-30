@@ -71,8 +71,11 @@ export default function Sidebar() {
 
   const handleLogout = async () => {
     deactivateDemo();
-    await logout.mutateAsync();
-    navigate("/login");
+    try {
+      await logout.mutateAsync();
+    } finally {
+      navigate("/login", { replace: true });
+    }
   };
 
   const initials = (user?.name ?? "D")

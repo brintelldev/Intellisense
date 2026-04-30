@@ -34,8 +34,11 @@ export default function Header() {
   const crumbs = ROUTE_LABELS[location] ?? ["Página"];
 
   const handleLogout = async () => {
-    await logout.mutateAsync();
-    navigate("/login");
+    try {
+      await logout.mutateAsync();
+    } finally {
+      navigate("/login", { replace: true });
+    }
   };
 
   return (

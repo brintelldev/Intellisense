@@ -36,7 +36,7 @@ function unwrap(res: AuthResponse): User {
 }
 
 export function useAuth() {
-  return useQuery<User>({
+  return useQuery<User | null>({
     queryKey: ["auth", "me"],
     queryFn: async () => unwrap(await api.get<AuthResponse>("/auth/me")),
     retry: false,
@@ -59,8 +59,15 @@ export function useLogout() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () => api.post("/auth/logout"),
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: ["auth", "me"] });
+      queryClient.setQueryData(["auth", "me"], null);
+    },
     onSuccess: () => {
       queryClient.clear();
+    },
+    onError: () => {
+      queryClient.setQueryData(["auth", "me"], null);
     },
   });
 }
