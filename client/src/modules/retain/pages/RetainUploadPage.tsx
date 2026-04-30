@@ -5,6 +5,7 @@ import { Progress } from "../../../shared/components/ui/progress";
 import { LoadingState } from "../../../shared/components/LoadingState";
 import { ConfirmDialog } from "../../../shared/components/ConfirmDialog";
 import { SnapshotEvolution } from "../../../shared/components/SnapshotEvolution";
+import { fmtBRLShort as fmtBRL, toNumber } from "../../../shared/lib/format";
 import {
   useRetainUploads,
   useRetainSnapshots,
@@ -486,11 +487,8 @@ export default function RetainUploadPage() {
           {/* Intelligence Brief */}
           {uploadResult?.intelligenceSummary && (() => {
             const s = uploadResult.intelligenceSummary;
-            const fmtBRL = (v: number) => v >= 1_000_000
-              ? `R$${(v / 1_000_000).toFixed(1)}M`
-              : v >= 1_000
-              ? `R$${(v / 1_000).toFixed(0)}K`
-              : `R$${v.toFixed(0)}`;
+            const totalRevenueAtRisk = toNumber(s.totalRevenueAtRisk) ?? 0;
+            const deltaRevenueAtRisk = toNumber(s.deltaRevenueAtRisk) ?? 0;
             return (
               <div className="space-y-3">
                 {/* Risk + Revenue row */}
@@ -508,16 +506,16 @@ export default function RetainUploadPage() {
                       </p>
                     </div>
                   )}
-                  {s.totalRevenueAtRisk > 0 && (
+                  {totalRevenueAtRisk > 0 && (
                     <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
                       <div className="flex items-center gap-2 mb-2">
                         <svg className="w-3 h-3 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                         <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Receita Sob Risco</span>
                       </div>
-                      <p className="text-2xl font-bold text-amber-700">{fmtBRL(s.totalRevenueAtRisk)}</p>
-                      {s.deltaRevenueAtRisk !== 0 && (
-                        <p className={`text-xs mt-1 ${s.deltaRevenueAtRisk > 0 ? "text-red-600" : "text-green-600"}`}>
-                          {s.deltaRevenueAtRisk > 0 ? "↑" : "↓"} {fmtBRL(Math.abs(s.deltaRevenueAtRisk))} vs. upload anterior
+                      <p className="text-2xl font-bold text-amber-700">{fmtBRL(totalRevenueAtRisk)}</p>
+                      {deltaRevenueAtRisk !== 0 && (
+                        <p className={`text-xs mt-1 ${deltaRevenueAtRisk > 0 ? "text-red-600" : "text-green-600"}`}>
+                          {deltaRevenueAtRisk > 0 ? "↑" : "↓"} {fmtBRL(Math.abs(deltaRevenueAtRisk))} vs. upload anterior
                         </p>
                       )}
                     </div>
