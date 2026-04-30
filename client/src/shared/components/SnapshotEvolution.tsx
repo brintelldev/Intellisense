@@ -2,6 +2,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend,
 } from "recharts";
+import { fmtBRLShort, toNumber } from "../lib/format";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -60,11 +61,8 @@ function shortLabel(filename: string, uploadedAt: string): string {
   return new Date(uploadedAt).toLocaleDateString("pt-BR", { month: "short", year: "2-digit" });
 }
 
-function formatBRL(v: number): string {
-  if (v >= 1_000_000) return `R$${(v / 1_000_000).toFixed(1)}M`;
-  if (v >= 1_000) return `R$${(v / 1_000).toFixed(0)}K`;
-  return `R$${v.toFixed(0)}`;
-}
+const numberOrZero = (value: unknown) => toNumber(value as number | string | null | undefined) ?? 0;
+const fixed = (value: unknown, decimals = 1) => numberOrZero(value).toFixed(decimals);
 
 function Trend({ values }: { values: number[] }) {
   if (values.length < 2) return null;
@@ -106,8 +104,8 @@ export function SnapshotEvolution({ mode, snapshots }: Props) {
     ...(mode === "retain"
       ? {
           "Score de Saúde": (s as RetainSnapshotPoint).avgHealthScore,
-          "Churn (%)": (s as RetainSnapshotPoint).churnRate,
-          "Em Risco (%)": (s as RetainSnapshotPoint).atRiskPct,
+          "Churn (%)": numberOrZero((s as RetainSnapshotPoint).churnRate),
+          "Em Risco (%)": numberOrZero((s as RetainSnapshotPoint).atRiskPct),
         }
       : {
           "Score Médio": (s as ObtainSnapshotPoint).avgScore,
@@ -124,29 +122,29 @@ export function SnapshotEvolution({ mode, snapshots }: Props) {
     ? [
         {
           label: "Score de Saúde",
-          values: retainSnaps.map(s => s.avgHealthScore),
-          fmt: (v: number) => v.toFixed(1),
+          values: retainSnaps.map(s => numberOrZero(s.avgHealthScore)),
+          fmt: (v: number) => fixed(v),
           color: "#293b83",
           goodUp: true,
         },
         {
           label: "Taxa de Churn",
-          values: retainSnaps.map(s => s.churnRate),
-          fmt: (v: number) => `${v.toFixed(1)}%`,
+          values: retainSnaps.map(s => numberOrZero(s.churnRate)),
+          fmt: (v: number) => `${fixed(v)}%`,
           color: "#ef4444",
           goodUp: false,
         },
         {
           label: "Clientes em Risco",
-          values: retainSnaps.map(s => s.atRiskPct),
-          fmt: (v: number) => `${v.toFixed(1)}%`,
+          values: retainSnaps.map(s => numberOrZero(s.atRiskPct)),
+          fmt: (v: number) => `${fixed(v)}%`,
           color: "#f59e0b",
           goodUp: false,
         },
         {
           label: "Receita Total",
-          values: retainSnaps.map(s => s.totalRevenue),
-          fmt: (v: number) => formatBRL(v),
+          values: retainSnaps.map(s => numberOrZero(s.totalRevenue)),
+          fmt: (v: number) => fmtBRLShort(v),
           color: "#10b981",
           goodUp: true,
         },
@@ -154,29 +152,29 @@ export function SnapshotEvolution({ mode, snapshots }: Props) {
     : [
         {
           label: "Score Médio",
-          values: obtainSnaps.map(s => s.avgScore),
-          fmt: (v: number) => v.toFixed(1),
+          values: obtainSnaps.map(s => numberOrZero(s.avgScore)),
+          fmt: (v: number) => fixed(v),
           color: "#293b83",
           goodUp: true,
         },
         {
           label: "Taxa de Conversão",
-          values: obtainSnaps.map(s => s.conversionRate),
-          fmt: (v: number) => `${v.toFixed(1)}%`,
+          values: obtainSnaps.map(s => numberOrZero(s.conversionRate)),
+          fmt: (v: number) => `${fixed(v)}%`,
           color: "#10b981",
           goodUp: true,
         },
         {
           label: "Hot Leads",
-          values: obtainSnaps.map(s => s.hotPct),
-          fmt: (v: number) => `${v.toFixed(1)}%`,
+          values: obtainSnaps.map(s => numberOrZero(s.hotPct)),
+          fmt: (v: number) => `${fixed(v)}%`,
           color: "#f59e0b",
           goodUp: true,
         },
         {
           label: "LTV Médio Previsto",
-          values: obtainSnaps.map(s => s.avgLtvPrediction),
-          fmt: (v: number) => formatBRL(v),
+          values: obtainSnaps.map(s => numberOrZero(s.avgLtvPrediction)),
+          fmt: (v: number) => fmtBRLShort(v),
           color: "#67b4b0",
           goodUp: true,
         },
