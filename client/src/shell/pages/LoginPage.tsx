@@ -18,7 +18,7 @@ export default function LoginPage() {
   // Redirect after real login (not demo mode).
   useEffect(() => {
     if (isAuthenticated && !isDemoMode) navigate("/");
-  }, [isAuthenticated, isDemoMode]);
+  }, [isAuthenticated, isDemoMode, navigate]);
 
   if (showRegister) {
     return <RegisterPage onBack={() => setShowRegister(false)} />;
@@ -28,6 +28,7 @@ export default function LoginPage() {
     e.preventDefault();
     try {
       await login.mutateAsync({ email, password, rememberMe });
+      navigate("/", { replace: true });
     } catch {
       // error shown in UI
     }
