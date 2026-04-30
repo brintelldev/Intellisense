@@ -17,9 +17,10 @@ import { tenantMiddleware } from "./middleware/tenant.js";
 const app = express();
 const port = parseInt(process.env.PORT || "3001");
 const isProduction = process.env.NODE_ENV === "production";
+const useSecureSessionCookie = process.env.SESSION_COOKIE_SECURE === "true";
 
 if (isProduction) {
-  app.set("trust proxy", 1);
+  app.set("trust proxy", true);
 }
 
 // Database pool
@@ -47,7 +48,7 @@ app.use(
     cookie: {
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
       httpOnly: true,
-      secure: isProduction,
+      secure: useSecureSessionCookie,
       sameSite: "lax",
     },
   })

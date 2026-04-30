@@ -17,12 +17,12 @@ import { tenantMiddleware } from "./middleware/tenant";
 export function createApp(sessionStore?: session.Store) {
   const app = express();
   const isProduction = process.env.NODE_ENV === "production";
+  const useSecureSessionCookie = process.env.SESSION_COOKIE_SECURE === "true";
 
-  // In production the app usually sits behind a reverse proxy / TLS terminator.
-  // Trusting the first proxy allows Express to respect X-Forwarded-Proto so
-  // secure session cookies are properly issued and sent back by the browser.
+  // In production the app may sit behind more than one proxy / TLS terminator.
+  // Trusting the chain keeps req.protocol aligned with X-Forwarded-Proto.
   if (isProduction) {
-    app.set("trust proxy", 1);
+    app.set("trust proxy", true);
   }
 
   app.use(express.json({ limit: "50mb" }));
@@ -40,7 +40,7 @@ export function createApp(sessionStore?: session.Store) {
         // No maxAge by default → session cookie that expires when the browser closes.
         // The /auth/login endpoint sets maxAge explicitly when rememberMe=true.
         httpOnly: true,
-        secure: isProduction,
+        secure: useSecureSessionCookie,
         sameSite: "lax",
       },
     })
