@@ -9,22 +9,22 @@ import { useAuthContext } from "../contexts/AuthContext";
 import { useLogout } from "../../shared/hooks/useAuth";
 
 const RETAIN_ITEMS = [
-  { icon: Upload, label: "Upload de Dados", path: "/retain/upload" },
   { icon: Shield, label: "Dashboard Executivo", path: "/retain" },
   { icon: BrainCircuit, label: "Predições de Churn", path: "/retain/predictions" },
   { icon: SearchCode, label: "Causas Raiz", path: "/retain/root-causes" },
   { icon: BarChart3, label: "Revenue Analytics", path: "/retain/revenue" },
   { icon: Users, label: "Empresas", path: "/retain/customers" },
   { icon: MessageSquareHeart, label: "Voz do Cliente", path: "/retain/voz-do-cliente" },
+  { icon: Upload, label: "Upload de Dados", path: "/retain/upload" },
 ];
 
 const OBTAIN_ITEMS = [
-  { icon: Upload, label: "Upload de Dados", path: "/obtain/upload" },
   { icon: TrendingUp, label: "Dashboard Executivo", path: "/obtain" },
   { icon: Target, label: "Lead Scoring", path: "/obtain/leads" },
   { icon: Fingerprint, label: "ICP & Lookalike", path: "/obtain/icp" },
   { icon: GitBranch, label: "Funil & Gargalos", path: "/obtain/funnel" },
   { icon: DollarSign, label: "CAC vs LTV", path: "/obtain/cac-ltv" },
+  { icon: Upload, label: "Upload de Dados", path: "/obtain/upload" },
 ];
 
 interface NavItemProps {
