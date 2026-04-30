@@ -1,16 +1,29 @@
 version: '3.8'
 
-# ─── Produção — conecta ao container PostgreSQL já existente ─────────────────
+# ─── Produção — IntelliSense ──────────────────────────────────────────────────
 #
-# Pré-requisitos na VPS (rodar uma vez):
-#   Nenhum — o container postgres-intellisense e a rede intellisense_net
-#   já existem. Basta subir este compose na mesma rede.
+# O servidor acessa o PostgreSQL via host.docker.internal:5434 (porta exposta
+# pelo container postgres no host). Não é necessário nenhuma rede Docker externa.
+#
+# Pré-requisito: criar .env.prod.local na raiz com as variáveis abaixo:
+#
+#   DATABASE_URL=postgresql://brintelldev:Br%21nt3llD0c%242024Secure@host.docker.internal:5434/intellisense
+#   SESSION_SECRET=<openssl rand -hex 64>
+#   OPENROUTER_API_KEY=sk-or-v1-...
+#   APP_PUBLIC_URL=https://SEU-DOMINIO.COM
+#   ALLOWED_ORIGINS=https://SEU-DOMINIO.COM
+#   CHAT_MODEL_PRIMARY=minimax/minimax-m2.5:free
+#   CHAT_MODEL_FALLBACK_1=qwen/qwen3-coder:free
+#   CHAT_MODEL_FALLBACK_2=nvidia/nemotron-3-super-120b-a12b:free
+#   CHAT_MAX_TOKENS=2000
+#   CHAT_MAX_ITERATIONS=5
+#   CHAT_ENABLED=true
 #
 # Deploy:
 #   docker compose -f docker-compose.prod.yml up -d --build
 #
-# Migrations (rodar após o primeiro deploy):
-#   docker compose -f docker-compose.prod.yml exec server npx drizzle-kit push
+# Migrations (rodar do HOST, antes ou depois do primeiro deploy):
+#   DATABASE_URL=postgresql://brintelldev:Br\!nt3llD0c\$2024Secure@localhost:5434/intellisense npm run db:push
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
@@ -20,22 +33,21 @@ services:
       dockerfile: Dockerfile.server.prod
     container_name: intellisense-server
     restart: unless-stopped
+    env_file:
+      - .env.prod.local
     environment:
       NODE_ENV: production
       PORT: 3001
-      # Dentro da rede intellisense_net o Postgres é acessado pelo nome do container
-      # Senha URL-encoded (original: n9\#)+w[H9J4$p9i)
-      DATABASE_URL: postgresql://admin:n9%5C%23%29%2Bw%5BH9J4%24p9i@postgres-intellisense:5432/intellisense
-      SESSION_SECRET: ${SESSION_SECRET}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # permite atingir localhost do host
     networks:
-      - intellisense_net
+      - app_internal
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3001/api/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 20s
+      start_period: 30s
 
   client:
     build:
@@ -44,13 +56,13 @@ services:
     container_name: intellisense-client
     restart: unless-stopped
     ports:
-      - "80:80"
+      - "8080:80"   # nginx externo do host proxya para esta porta
     networks:
-      - intellisense_net
+      - app_internal
     depends_on:
       server:
         condition: service_healthy
 
 networks:
-  intellisense_net:
-    external: true   # rede já criada pelo compose do Postgres
+  app_internal:
+    driver: bridge   # rede privada entre server e client; postgres fica no host
