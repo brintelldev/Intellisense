@@ -9,8 +9,9 @@ COPY client ./client
 COPY shared ./shared
 COPY tsconfig.json ./
 
-# Build static assets — output goes to client/dist (vite root = client/)
-RUN npx vite build --config client/vite.config.ts
+# Build from the Vite/Tailwind root so Tailwind content globs resolve.
+WORKDIR /app/client
+RUN npx vite build
 
 # Production: serve built files with Nginx
 FROM nginx:alpine
